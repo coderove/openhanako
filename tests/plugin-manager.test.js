@@ -91,6 +91,78 @@ describe("loadAll", () => {
     expect(entry.instance.loaded).toBe(true);
   });
 
+  it("passes runtime scope into lifecycle and tool contexts", async () => {
+    const runtimeContext = {
+      serverId: "server_plugin",
+      userId: "user_plugin",
+      spaceId: "space_plugin",
+      connectionKind: "local",
+      credentialKind: "loopback_token",
+      platformAccountId: null,
+      officialServiceKind: null,
+    };
+    const dir = path.join(pluginsDir, "scope-plugin");
+    fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({
+      id: "scope-plugin",
+      trust: "full-access",
+      activationEvents: ["onStartup"],
+    }));
+    fs.writeFileSync(path.join(dir, "index.js"), `
+      export default class ScopePlugin {
+        async onload() {
+          globalThis.__hanaScopePluginLifecycle = {
+            serverId: this.ctx.serverId,
+            userId: this.ctx.userId,
+            spaceId: this.ctx.spaceId,
+            connectionKind: this.ctx.connectionKind,
+            credentialKind: this.ctx.credentialKind,
+          };
+        }
+      }
+    `);
+    fs.writeFileSync(path.join(dir, "tools", "scope.js"), `
+      export const name = "scope";
+      export const description = "Return scope";
+      export const parameters = {};
+      export async function execute(_input, ctx) {
+        return JSON.stringify({
+          serverId: ctx.serverId,
+          userId: ctx.userId,
+          spaceId: ctx.spaceId,
+          sessionPath: ctx.sessionPath,
+        });
+      }
+    `);
+    const pm = new PluginManager({
+      pluginsDir,
+      dataDir,
+      bus: await makeBus(),
+      runtimeContext,
+    });
+    pm.scan();
+    await pm.loadAll();
+
+    expect(globalThis.__hanaScopePluginLifecycle).toEqual({
+      serverId: "server_plugin",
+      userId: "user_plugin",
+      spaceId: "space_plugin",
+      connectionKind: "local",
+      credentialKind: "loopback_token",
+    });
+    const tool = pm.getAllTools()[0];
+    const result = await tool.execute("call-1", {}, {
+      sessionManager: { getSessionFile: () => "/sessions/plugin-scope.jsonl" },
+    });
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      serverId: "server_plugin",
+      userId: "user_plugin",
+      spaceId: "space_plugin",
+      sessionPath: "/sessions/plugin-scope.jsonl",
+    });
+    delete globalThis.__hanaScopePluginLifecycle;
+  });
+
   it("provides register() on instance and cleans up on unload", async () => {
     const dir = path.join(pluginsDir, "reg-test");
     fs.mkdirSync(dir, { recursive: true });

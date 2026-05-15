@@ -19,6 +19,7 @@ import { migrateConfigScope } from "../shared/migrate-config-scope.js";
 import { migrateToProvidersYaml } from "./migrate-providers.js";
 import { migrateProviderMediaConfig } from "./provider-media-config.js";
 import { runMigrations } from "./migrations.js";
+import { createServerRuntimeContext } from "./server-runtime-context.js";
 import { findModel } from "../shared/model-ref.js";
 import { resolveWorkspaceSkillPaths } from "../shared/workspace-skill-paths.js";
 import { resolveHanaPiAgentDir, resolveHanaPiProjectDir } from "../shared/hana-runtime-paths.js";
@@ -133,11 +134,13 @@ export class HanaEngine {
    * @param {string} dirs.hanakoHome
    * @param {string} dirs.productDir
    * @param {string} [dirs.agentId]
+   * @param {string} [dirs.appVersion]
    */
-  constructor({ hanakoHome, productDir, agentId }) {
+  constructor({ hanakoHome, productDir, agentId, appVersion }) {
     this.hanakoHome = hanakoHome;
     this.productDir = productDir;
-    this.appVersion = "0.0.0";
+    this.appVersion = appVersion || "0.0.0";
+    this._runtimeContext = null;
     this.agentsDir = path.join(hanakoHome, "agents");
     this.userDir = path.join(hanakoHome, "user");
     this.channelsDir = path.join(hanakoHome, "channels");
@@ -367,6 +370,17 @@ export class HanaEngine {
 
   get taskRegistry() {
     return this._taskRegistry;
+  }
+
+  get runtimeContext() {
+    return this._runtimeContext;
+  }
+
+  getRuntimeContext() {
+    if (!this._runtimeContext) {
+      throw new Error("server runtime context is not initialized");
+    }
+    return this._runtimeContext;
   }
 
   get terminalSessions() {
@@ -945,6 +959,10 @@ export class HanaEngine {
       providerRegistry: this._models.providerRegistry,
       log,
     });
+    this._runtimeContext = createServerRuntimeContext({
+      hanakoHome: this.hanakoHome,
+      appVersion: this.appVersion,
+    });
 
     // 频道初始化和 agent 构造会调用 server-side i18n。locale 是 global
     // preference，必须在任何会写持久化文案的初始化逻辑前加载。
@@ -1198,6 +1216,7 @@ export class HanaEngine {
       registerSessionFile: (entry) => this.registerSessionFile(entry),
       slashRegistry: this._slashSystem?.registry ?? null,
       logSink: (entry) => this._pluginDevService?.recordLog(entry),
+      runtimeContext: this.getRuntimeContext(),
     });
     const allowedPluginDevSourceRoots = [
       pluginDevSourcesDir,

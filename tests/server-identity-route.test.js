@@ -105,4 +105,51 @@ describe("server identity route", () => {
       detail: expect.stringContaining("invalid spaces.json"),
     });
   });
+
+  it("uses the initialized runtime context when available", async () => {
+    tmpDir = makeTmpDir();
+    fs.writeFileSync(path.join(tmpDir, "server-node.json"), "{ bad json", "utf-8");
+    const { createServerIdentityRoute } = await import("../server/routes/server-identity.js");
+    const app = new Hono();
+    app.route("/api", createServerIdentityRoute({
+      hanakoHome: tmpDir,
+      appVersion: "9.9.9",
+      getRuntimeContext: () => ({
+        connectionKind: "local",
+        serverId: "server_runtime_route",
+        userId: "user_runtime_route",
+        spaceId: "space_runtime_route",
+        label: "Runtime Route Server",
+        userLabel: "Runtime Route User",
+        spaceLabel: "Runtime Route Space",
+        trustState: "local",
+        authState: "paired",
+        credentialKind: "loopback_token",
+        platformAccountId: null,
+        officialServiceKind: null,
+        capabilities: ["chat", "resources", "tools"],
+        appVersion: "8.8.8",
+      }),
+    }));
+
+    const res = await app.request("/api/server/identity");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      connectionKind: "local",
+      serverId: "server_runtime_route",
+      userId: "user_runtime_route",
+      spaceId: "space_runtime_route",
+      label: "Runtime Route Server",
+      userLabel: "Runtime Route User",
+      spaceLabel: "Runtime Route Space",
+      trustState: "local",
+      authState: "paired",
+      credentialKind: "loopback_token",
+      platformAccountId: null,
+      officialServiceKind: null,
+      capabilities: ["chat", "resources", "tools"],
+      version: "9.9.9",
+    });
+  });
 });

@@ -88,7 +88,7 @@ try {
 
 // ── 初始化引擎 ──
 console.log("[server] ② 创建 HanaEngine...");
-const engine = new HanaEngine({ hanakoHome, productDir });
+const engine = new HanaEngine({ hanakoHome, productDir, appVersion });
 console.log("[server] ② HanaEngine 构造完成，开始 init...");
 await engine.init((msg) => console.log(`[server] ${msg}`));
 console.log("[server] ② engine.init 完成");
@@ -393,7 +393,11 @@ app.route("/api", createConfirmRoute(confirmStore, engine));
 app.route("/api", createPluginsRoute(engine));
 app.route("/api", createCheckpointsRoute(engine));
 app.route("/api", createCommandsRoute(engine));
-app.route("/api", createServerIdentityRoute({ hanakoHome: engine.hanakoHome, appVersion }));
+app.route("/api", createServerIdentityRoute({
+  hanakoHome: engine.hanakoHome,
+  appVersion,
+  getRuntimeContext: () => engine.getRuntimeContext(),
+}));
 // internal-browser WS — see unified upgrade handler in server startup below
 
 // 健康检查 + 身份信息

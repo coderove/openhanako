@@ -57,6 +57,13 @@ export interface HanaMediaDetails {
 }
 
 export interface HanaToolContext {
+  serverId: string;
+  userId: string;
+  spaceId: string;
+  connectionKind?: 'local' | 'lan' | 'custom_remote' | 'relay' | 'cloud' | string;
+  credentialKind?: 'none' | 'loopback_token' | 'device_credential' | 'user_session' | string;
+  platformAccountId?: string | null;
+  officialServiceKind?: 'relay' | 'cloud_space' | 'inference' | 'billing' | string | null;
   pluginId: string;
   pluginDir: string;
   dataDir: string;
@@ -243,6 +250,13 @@ export interface HanaPluginLogger {
 }
 
 export interface HanaBusHandlerContext {
+  serverId: string;
+  userId: string;
+  spaceId: string;
+  connectionKind?: 'local' | 'lan' | 'custom_remote' | 'relay' | 'cloud' | string;
+  credentialKind?: 'none' | 'loopback_token' | 'device_credential' | 'user_session' | string;
+  platformAccountId?: string | null;
+  officialServiceKind?: 'relay' | 'cloud_space' | 'inference' | 'billing' | string | null;
   pluginId: string;
   bus: HanaEventBus;
   config?: HanaPluginConfigStore;
@@ -260,6 +274,13 @@ export interface HanaBusHandlerDefinition<
 }
 
 export interface HanaPluginContext {
+  serverId: string;
+  userId: string;
+  spaceId: string;
+  connectionKind?: 'local' | 'lan' | 'custom_remote' | 'relay' | 'cloud' | string;
+  credentialKind?: 'none' | 'loopback_token' | 'device_credential' | 'user_session' | string;
+  platformAccountId?: string | null;
+  officialServiceKind?: 'relay' | 'cloud_space' | 'inference' | 'billing' | string | null;
   pluginId: string;
   pluginDir: string;
   dataDir: string;

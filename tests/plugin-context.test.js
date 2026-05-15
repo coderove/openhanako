@@ -26,6 +26,33 @@ describe("createPluginContext", () => {
     expect(typeof ctx.config.set).toBe("function");
   });
 
+  it("exposes server runtime scope when provided", () => {
+    const bus = { emit() {}, subscribe() {}, request() {}, hasHandler() {} };
+    const ctx = createPluginContext({
+      pluginId: "scoped-plugin",
+      pluginDir: "/plugins/scoped-plugin",
+      dataDir: "/plugin-data/scoped-plugin",
+      bus,
+      runtimeContext: {
+        serverId: "server_scope",
+        userId: "user_scope",
+        spaceId: "space_scope",
+        connectionKind: "local",
+        credentialKind: "loopback_token",
+        platformAccountId: null,
+        officialServiceKind: null,
+      },
+    });
+
+    expect(ctx.serverId).toBe("server_scope");
+    expect(ctx.userId).toBe("user_scope");
+    expect(ctx.spaceId).toBe("space_scope");
+    expect(ctx.connectionKind).toBe("local");
+    expect(ctx.credentialKind).toBe("loopback_token");
+    expect(ctx.platformAccountId).toBeNull();
+    expect(ctx.officialServiceKind).toBeNull();
+  });
+
   it("config.get/set reads and writes plugin-data config.json", async () => {
     const fs = await import("fs");
     const os = await import("os");
