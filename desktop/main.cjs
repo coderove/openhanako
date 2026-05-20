@@ -237,6 +237,7 @@ app.on("child-process-gone", (_event, details) => {
   if (!recordGpuChildProcessGone({
     hanakoHome,
     platform: process.platform,
+    policy: gpuStartupPolicy,
     details,
   })) {
     return;
