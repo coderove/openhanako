@@ -88,6 +88,7 @@ function makeTicker(tmpDir, isSessionMemoryEnabled) {
     getResolvedMemoryModel: () => ({ model: "test-model", provider: "test", api: "openai-completions", api_key: "test-key", base_url: "http://localhost:1234" }),
     getMemoryMasterEnabled: () => true,
     isSessionMemoryEnabled,
+    getTimezone: () => "Asia/Shanghai",
     onCompiled: vi.fn(),
     sessionDir: path.join(tmpDir, "sessions"),
     memoryDir,
