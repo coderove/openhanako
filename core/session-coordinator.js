@@ -863,7 +863,7 @@ export class SessionCoordinator {
     // 目录下的 session 文件。一旦这类路径混入焦点指针，listSessions 的占位逻辑会把
     // 它伪造成"新对话"幻影条目（不能归档、重启即消失）。
     if (!isActiveSessionPath(sessionPath, this._d.agentsDir)) {
-      throw new Error(`switchSession: path must be in agents/{id}/sessions/ — got ${sessionPath}`);
+      throw new Error(`switchSession: path must be in active desktop session agents/{id}/sessions/*.jsonl; got ${sessionPath}`);
     }
 
     // 切到已有 session 时清空 pendingModel（用户的临时选择不应跟到别的 session）
@@ -1030,6 +1030,7 @@ export class SessionCoordinator {
   // ── Path 感知 API（Phase 2） ──
 
   async promptSession(sessionPath, text, opts) {
+    this._assertActiveDesktopSessionPath(sessionPath, "promptSession");
     let entry = this._sessions.get(sessionPath);
     if (!entry) {
       await this.ensureSessionLoaded(sessionPath);
@@ -1085,8 +1086,9 @@ export class SessionCoordinator {
     return true;
   }
 
-  async deliverCustomMessage(sessionPath, message) {
+  async deliverCustomMessage(sessionPath, message, options = {}) {
     if (!sessionPath) throw new Error("deliverCustomMessage: sessionPath is required");
+    this._assertActiveDesktopSessionPath(sessionPath, "deliverCustomMessage");
     let entry = this._sessions.get(sessionPath);
     if (!entry) {
       await this.ensureSessionLoaded(sessionPath);
@@ -1105,8 +1107,9 @@ export class SessionCoordinator {
       return { ok: true, mode: "followUp" };
     }
 
-    await entry.session.sendCustomMessage(message, { triggerTurn: true });
-    return { ok: true, mode: "triggerTurn" };
+    const triggerTurn = options?.triggerTurn !== false;
+    await entry.session.sendCustomMessage(message, { triggerTurn });
+    return { ok: true, mode: triggerTurn ? "triggerTurn" : "notifyOnly" };
   }
 
   async abortSession(sessionPath) {
@@ -1132,6 +1135,7 @@ export class SessionCoordinator {
    * @returns {Promise<{ adaptations: string[] }>}
    */
   async switchSessionModel(sessionPath, newModel) {
+    this._assertActiveDesktopSessionPath(sessionPath, "switchSessionModel");
     let entry = this._sessions.get(sessionPath);
     if (!entry) {
       await this.ensureSessionLoaded(sessionPath);
@@ -1835,6 +1839,22 @@ export class SessionCoordinator {
     return this._hibernatedSessionMeta.get(sessionPath)?.contextUsage || null;
   }
 
+  _assertActiveDesktopSessionPath(sessionPath, operation) {
+    if (!isActiveSessionPath(sessionPath, this._d.agentsDir)) {
+      throw new Error(`${operation}: path must be an active desktop session under agents/{id}/sessions/*.jsonl; got ${sessionPath}`);
+    }
+  }
+
+  isRunnableSessionPath(sessionPath) {
+    if (!isActiveSessionPath(sessionPath, this._d.agentsDir)) return false;
+    if (this._sessions.has(sessionPath) || this._hibernatedSessionMeta.has(sessionPath)) return true;
+    try {
+      return fs.existsSync(sessionPath);
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * 确保 sessionPath 已加载进 _sessions cache，但**不改 this._session（UI 焦点）**。
    *
@@ -1849,6 +1869,7 @@ export class SessionCoordinator {
    * @returns {Promise<object>} AgentSession 实例
    */
   async ensureSessionLoaded(sessionPath) {
+    this._assertActiveDesktopSessionPath(sessionPath, "ensureSessionLoaded");
     const existing = this._sessions.get(sessionPath);
     if (existing) {
       existing.lastTouchedAt = Date.now();
