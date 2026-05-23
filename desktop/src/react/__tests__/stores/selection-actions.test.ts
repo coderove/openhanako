@@ -3,7 +3,7 @@
 import { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { captureChatSelection, captureSelection, initQuotedSelectionLifecycle } from '../../stores/selection-actions';
+import { captureChatSelection, captureSelection, clearSelection, initQuotedSelectionLifecycle } from '../../stores/selection-actions';
 import { useStore } from '../../stores';
 import type { PreviewItem } from '../../types';
 
@@ -93,7 +93,7 @@ describe('captureSelection', () => {
     });
   });
 
-  it('clears an existing quote when the native window selection is canceled', () => {
+  it('keeps an existing chat quote when composer focus cancels the native selection', () => {
     const dispose = initQuotedSelectionLifecycle(document);
     try {
       useStore.setState({
@@ -107,14 +107,93 @@ describe('captureSelection', () => {
           charCount: 9,
         },
       } as never);
+      document.body.innerHTML = '<textarea id="composer"></textarea>';
+      document.getElementById('composer')?.focus();
 
       window.getSelection()?.removeAllRanges();
+      document.dispatchEvent(new Event('selectionchange'));
+
+      expect(useStore.getState().quotedSelection).toMatchObject({
+        text: 'old quote',
+        sourceKind: 'chat',
+      });
+    } finally {
+      dispose();
+    }
+  });
+
+  it('clears an existing chat quote when the collapsed native selection remains in the same chat session', () => {
+    const dispose = initQuotedSelectionLifecycle(document);
+    try {
+      useStore.setState({
+        quotedSelection: {
+          text: 'old quote',
+          sourceTitle: 'Assistant message',
+          sourceKind: 'chat',
+          sourceSessionPath: '/session/a.jsonl',
+          sourceMessageId: 'assistant-1',
+          sourceRole: 'assistant',
+          charCount: 9,
+        },
+      } as never);
+      document.body.innerHTML = `
+        <section data-chat-selection-root="" data-session-path="/session/a.jsonl">
+          <article data-message-id="assistant-1"><span id="caret-host">inside chat</span></article>
+        </section>
+      `;
+      placeCollapsedSelection(document.getElementById('caret-host')!);
+
       document.dispatchEvent(new Event('selectionchange'));
 
       expect(useStore.getState().quotedSelection).toBeNull();
     } finally {
       dispose();
     }
+  });
+
+  it('keeps an existing preview quote when chat capture sees an empty selection', () => {
+    useStore.setState({
+      quotedSelection: {
+        text: 'preview quote',
+        sourceTitle: 'note.md',
+        sourceKind: 'preview',
+        sourceFilePath: '/notes/note.md',
+        charCount: 13,
+      },
+    } as never);
+
+    window.getSelection()?.removeAllRanges();
+    captureChatSelection('/session/a.jsonl');
+
+    expect(useStore.getState().quotedSelection).toMatchObject({
+      text: 'preview quote',
+      sourceKind: 'preview',
+    });
+  });
+
+  it('clears only quotes matching the requested source scope', () => {
+    useStore.setState({
+      quotedSelection: {
+        text: 'chat quote',
+        sourceTitle: 'Assistant message',
+        sourceKind: 'chat',
+        sourceSessionPath: '/session/a.jsonl',
+        sourceMessageId: 'assistant-1',
+        sourceRole: 'assistant',
+        charCount: 10,
+      },
+    } as never);
+
+    clearSelection({ sourceKind: 'preview' });
+
+    expect(useStore.getState().quotedSelection).toMatchObject({
+      text: 'chat quote',
+      sourceKind: 'chat',
+    });
+
+    clearSelection({ sourceKind: 'chat', sourceSessionPath: '/session/a.jsonl' });
+
+    expect(useStore.getState().quotedSelection).toBeNull();
   });
 
   it('clears an existing quote when chat capture sees an empty selection', () => {
@@ -213,6 +292,17 @@ function selectAcrossElements(startElement: HTMLElement, endElement: HTMLElement
   const range = document.createRange();
   range.setStart(startNode, 0);
   range.setEnd(endNode, endNode.textContent?.length || 0);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function placeCollapsedSelection(element: HTMLElement): void {
+  const textNode = element.firstChild;
+  if (!textNode) throw new Error('test fixture must contain a text node');
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.collapse(true);
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);

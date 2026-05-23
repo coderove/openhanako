@@ -68,6 +68,10 @@
     opacity: 0.64;
 }
 
+:global(.mobile-desktop-root) .sessionSearchInput {
+    font-size: 16px;
+}
+
 .sessionSearchClear {
     display: inline-flex;
     align-items: center;

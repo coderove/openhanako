@@ -1,10 +1,16 @@
 import { useStore } from './index';
 import type { PreviewItem } from '../types';
 import type { EditorView } from '@codemirror/view';
-import type { FloatingAnchorRect } from './input-slice';
+import type { FloatingAnchorRect, QuotedSelection } from './input-slice';
 import type { ChatMessage } from './chat-types';
 
 const MAX_QUOTED_SELECTION_CHARS = 2000;
+type QuoteClearScope = {
+  sourceKind?: QuotedSelection['sourceKind'];
+  sourceFilePath?: string | null;
+  sourceSessionPath?: string | null;
+  sourceMessageId?: string | null;
+};
 
 let quotedSelectionLifecycle:
   | { target: Document; cleanup: () => void }
@@ -46,13 +52,13 @@ export function captureSelection(previewItem: PreviewItem, cmView?: EditorView):
 function captureCMSelection(previewItem: PreviewItem, view: EditorView): void {
   const { from, to } = view.state.selection.main;
   if (from === to) {
-    clearSelection();
+    clearSelection(previewClearScope(previewItem));
     return;
   }
   const rawText = view.state.sliceDoc(from, to);
   const text = rawText.trim();
   if (!text) {
-    clearSelection();
+    clearSelection(previewClearScope(previewItem));
     return;
   }
   const leadingTrimmed = rawText.length - rawText.trimStart().length;
@@ -79,7 +85,7 @@ function captureDOMSelection(previewItem: PreviewItem): void {
   const sel = window.getSelection();
   const text = sel?.toString().trim();
   if (!text) {
-    clearSelection();
+    clearSelection(previewClearScope(previewItem));
     return;
   }
   const clipped = clipQuotedText(text);
@@ -88,6 +94,7 @@ function captureDOMSelection(previewItem: PreviewItem): void {
     text: clipped,
     sourceTitle: previewItem.title,
     sourceKind: 'preview',
+    sourceFilePath: previewItem.filePath,
     charCount: text.length,
     anchorRect: sel && sel.rangeCount > 0 ? getRangeAnchorRect(sel.getRangeAt(0)) : undefined,
     updatedAt: Date.now(),
@@ -98,7 +105,7 @@ export function captureChatSelection(sessionPath: string): void {
   const sel = window.getSelection();
   const text = sel?.toString().trim();
   if (!sel || !text || sel.rangeCount === 0) {
-    clearSelection();
+    clearSelection({ sourceKind: 'chat', sourceSessionPath: sessionPath });
     return;
   }
 
@@ -208,16 +215,28 @@ function getCMSelectionAnchorRect(view: EditorView, from: number, to: number): F
   return unionRects(rects);
 }
 
-export function clearSelection(): void {
+export function clearSelection(scope?: QuoteClearScope): void {
   const s = useStore.getState();
-  if (s.quotedSelection) s.clearQuotedSelection();
+  if (s.quotedSelection && quotedSelectionMatchesScope(s.quotedSelection, scope)) {
+    s.clearQuotedSelection();
+  }
 }
 
 function clearSelectionIfNativeSelectionIsEmpty(target: Document): void {
+  const current = useStore.getState().quotedSelection;
+  if (!current) return;
   const sel = getNativeSelection(target);
   const text = sel?.toString().trim();
   if (sel && text && sel.rangeCount > 0) return;
-  clearSelection();
+  if (!sel || sel.rangeCount === 0) return;
+
+  if (current.sourceKind === 'chat' && nativeSelectionBelongsToChatSource(sel, current)) {
+    clearSelection({
+      sourceKind: 'chat',
+      sourceSessionPath: current.sourceSessionPath,
+      sourceMessageId: current.sourceMessageId,
+    });
+  }
 }
 
 function getNativeSelection(target: Document): Selection | null {
@@ -225,4 +244,36 @@ function getNativeSelection(target: Document): Selection | null {
     return target.getSelection();
   }
   return target.defaultView?.getSelection?.() ?? window.getSelection();
+}
+
+function previewClearScope(previewItem: PreviewItem): QuoteClearScope {
+  return previewItem.filePath
+    ? { sourceKind: 'preview', sourceFilePath: previewItem.filePath }
+    : { sourceKind: 'preview' };
+}
+
+function quotedSelectionMatchesScope(selection: QuotedSelection, scope?: QuoteClearScope): boolean {
+  if (!scope) return true;
+  if (scope.sourceKind && selection.sourceKind !== scope.sourceKind) return false;
+  if (scope.sourceFilePath !== undefined && selection.sourceFilePath !== scope.sourceFilePath) return false;
+  if (scope.sourceSessionPath !== undefined && selection.sourceSessionPath !== scope.sourceSessionPath) return false;
+  if (scope.sourceMessageId !== undefined && selection.sourceMessageId !== scope.sourceMessageId) return false;
+  return true;
+}
+
+function nativeSelectionBelongsToChatSource(selection: Selection, quotedSelection: QuotedSelection): boolean {
+  const anchorElement = nodeElement(selection.anchorNode);
+  const focusElement = nodeElement(selection.focusNode);
+  if (!anchorElement || !focusElement) return false;
+
+  const anchorRoot = closestChatSelectionRoot(anchorElement);
+  const focusRoot = closestChatSelectionRoot(focusElement);
+  if (!anchorRoot || anchorRoot !== focusRoot) return false;
+
+  const sessionPath = anchorRoot.dataset.sessionPath || null;
+  return !quotedSelection.sourceSessionPath || sessionPath === quotedSelection.sourceSessionPath;
+}
+
+function closestChatSelectionRoot(element: Element): HTMLElement | null {
+  return element.closest<HTMLElement>('[data-chat-selection-root]');
 }
