@@ -37,6 +37,7 @@ import { createWaitTool } from "../lib/tools/wait-tool.js";
 import { createStopTaskTool } from "../lib/tools/stop-task-tool.js";
 import { createCurrentStatusTool } from "../lib/tools/current-status-tool.js";
 import { createTerminalTool } from "../lib/tools/terminal-tool.js";
+import { createWorkflowTool } from "../lib/tools/workflow-tool.js";
 import { runCompatChecks } from "../lib/compat/index.js";
 import { getPlatformPromptNote } from "./platform-prompt.js";
 import { assertAgentConfigPatchYuan, getAgentConfigRepairState } from "./yuan-registry.js";
@@ -494,6 +495,23 @@ export class Agent {
       persistSubagentSessionMeta: (sessionPath, meta) => writeSubagentSessionMeta(sessionPath, meta),
     });
 
+    // 13. workflow 工具（受设置开关控制，默认关）
+    this._workflowTool = createWorkflowTool({
+      executeIsolated: (prompt, opts) => {
+        if (!this._cb?.executeIsolated) throw new Error("workflow 调用失败：engine 未初始化");
+        return this._cb.executeIsolated(prompt, opts);
+      },
+      getSessionPath: () => this._cb?.getCurrentSessionPath?.(),
+      getParentCwd: () => this._cb?.getCwd?.() || null,
+      getAgentId: () => this.id,
+      emitEvent: (event, sp) => this._cb?.emitEvent?.(event, sp),
+      resolveAgentId: (agentType) => {
+        const all = this._listAgents ? this._listAgents() : [];
+        const hit = all.find((a) => a.id === agentType || a.name === agentType);
+        return hit?.id;
+      },
+    });
+
     // 12. 组装 system prompt（按 master 构建，与 per-session 开关解耦）
     log(`  [agent] 9. buildSystemPrompt...`);
     this._systemPrompt = this.buildSystemPrompt({ forceMemoryEnabled: this._memoryMasterEnabled });
@@ -627,6 +645,7 @@ export class Agent {
     const computerUseTools = this._isComputerUseAvailableForThisAgent()
       ? [this._getComputerUseTool()]
       : [];
+    const workflowTools = this._isWorkflowEnabled() ? [this._workflowTool] : [];
     const legacyArtifactTools = options.includeLegacyArtifactTool === true
       ? [this._artifactTool]
       : [];
@@ -649,6 +668,7 @@ export class Agent {
       this._stopTaskTool,
       this._updateSettingsTool,
       this._subagentTool,
+      ...workflowTools,
       this._checkDeferredTool,
       this._currentStatusTool,
       this._terminalTool,
@@ -683,6 +703,10 @@ export class Agent {
     if (settings?.enabled !== true) return false;
     const primaryAgentId = engine?.getPrimaryAgentId?.() || null;
     return !primaryAgentId || primaryAgentId === this.id;
+  }
+
+  _isWorkflowEnabled() {
+    return this._cb?.getEngine?.()?.getWorkflowSettings?.()?.enabled === true;
   }
 
   // Desk 系统访问
