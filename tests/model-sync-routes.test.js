@@ -632,9 +632,9 @@ describe("model sync related routes", () => {
         reasoning: true,
       },
       provider: "minimax",
-      api: "openai-completions",
+      api: "anthropic-messages",
       api_key: "sk-test",
-      base_url: "https://api.minimax.io/v1",
+      base_url: "https://api.minimaxi.com/anthropic",
     };
     const engine = {
       availableModels: [],
@@ -1484,6 +1484,41 @@ describe("model sync related routes", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.minimaxi.com/anthropic/v1/models?limit=1000");
     const data = await res.json();
     expect(data.models.map(m => m.id)).toEqual(["MiniMax-M2.7"]);
+  });
+
+  it("normalizes MiniMax Token Plan v1 base URLs to the shared Anthropic endpoint", async () => {
+    const { createProvidersRoute } = await import("../server/routes/providers.js");
+    const app = new Hono();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ id: "MiniMax-M3", display_name: "MiniMax M3" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = withResolveCreds({
+      getRegistryModelsForProvider: vi.fn().mockReturnValue([]),
+      providerRegistry: {
+        getCredentials: () => ({ apiKey: "sk-test", baseUrl: "https://api.minimaxi.com/v1", api: "anthropic-messages" }),
+        getAuthJsonKey: (id) => id,
+        getDefaultModels: () => [],
+      },
+      hanakoHome: "/tmp",
+    });
+
+    app.route("/api", createProvidersRoute(engine));
+
+    const res = await app.request("/api/providers/fetch-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "minimax-token-plan" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.minimaxi.com/anthropic/v1/models?limit=1000");
+    const data = await res.json();
+    expect(data.models.map(m => m.id)).toEqual(["MiniMax-M3"]);
   });
 
   it("request body api_key overrides saved credentials", async () => {

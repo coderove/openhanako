@@ -55,22 +55,29 @@ afterEach(() => {
 // ── getCredentials ───────────────────────────────────────────────────────────
 
 describe("getCredentials", () => {
-  it("registers MiniMax Token Plan as an OpenAI-compatible provider boundary", () => {
+  it("keeps MiniMax Token Plan as a distinct Anthropic-compatible provider boundary", () => {
     writeAddedModels({});
     const reg = new ProviderRegistry(tmpDir);
 
+    const minimax = reg.get("minimax");
     const entry = reg.get("minimax-token-plan");
 
+    expect(minimax).toMatchObject({
+      id: "minimax",
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      api: "anthropic-messages",
+    });
     expect(entry).toMatchObject({
       id: "minimax-token-plan",
       displayName: "MiniMax Token Plan",
       authType: "api-key",
-      baseUrl: "https://api.minimax.io/v1",
-      api: "openai-completions",
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      api: "anthropic-messages",
       isBuiltin: true,
     });
+    expect(entry.id).not.toBe(minimax.id);
     expect(reg.getDefaultModels("minimax-token-plan")).toEqual(
-      expect.arrayContaining(["MiniMax-M2.7"])
+      expect.arrayContaining(["MiniMax-M3", "MiniMax-M2.1-highspeed"])
     );
   });
 

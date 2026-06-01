@@ -134,6 +134,13 @@ const GENERIC_MODEL_FALLBACKS = {
     reasoning: true,
     visionCapabilities: { grounding: true, boxes: true, points: true, coordinateSpace: "norm-1000", boxOrder: "xyxy", outputFormat: "anchor", groundingMode: "prompted" },
   },
+  "MiniMax-M3": {
+    name: "MiniMax M3",
+    context: 1000000,
+    maxOutput: 524288,
+    image: true,
+    reasoning: true,
+  },
 };
 
 vi.mock("../shared/known-models.js", () => ({
@@ -499,6 +506,12 @@ describe("syncModels", () => {
         api_key: "sk-test",
         models: ["MiniMax-M2.7"],
       },
+      "minimax-token-plan": {
+        base_url: "https://api.minimaxi.com/anthropic",
+        api: "anthropic-messages",
+        api_key: "sk-token-plan",
+        models: ["MiniMax-M3"],
+      },
     };
 
     syncModels(providers, { modelsJsonPath });
@@ -512,6 +525,22 @@ describe("syncModels", () => {
       supportsDeveloperRole: false,
       thinkingFormat: "anthropic",
     });
+    expect(result.providers["minimax-token-plan"].api).toBe("anthropic-messages");
+    expect(result.providers["minimax-token-plan"].baseUrl).toBe("https://api.minimaxi.com/anthropic");
+    expect(result.providers["minimax-token-plan"].apiKey).toBe("hana-runtime-api-key:minimax-token-plan");
+    expect(result.providers["minimax-token-plan"].models[0]).toMatchObject({
+      id: "MiniMax-M3",
+      name: "MiniMax M3",
+      input: ["text", "image"],
+      contextWindow: 1000000,
+      maxTokens: 524288,
+      reasoning: true,
+      compat: {
+        supportsDeveloperRole: false,
+        thinkingFormat: "anthropic",
+      },
+    });
+    expect(result.providers["minimax-token-plan"].models[0].compat?.hanaVideoInput).toBeUndefined();
   });
 
   it("marks DeepSeek V4 on the Anthropic endpoint with an explicit reasoning profile", async () => {

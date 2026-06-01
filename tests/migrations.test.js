@@ -11,7 +11,7 @@ import { getAgentPhoneProjectionPath, safeConversationStem } from "../lib/conver
 
 // ── 测试工具 ────────────────────────────────────────────────────────────────
 
-const LATEST_DATA_VERSION = 34;
+const LATEST_DATA_VERSION = 35;
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "hana-migrations-"));
@@ -3202,5 +3202,98 @@ describe("migration #34 — workflow default is explicit opt-in", () => {
     runFrom33();
 
     expect(readAgentConfig(agentsDir, "missing").tools.disabled).toContain("workflow");
+  });
+});
+
+describe("migration #35 — MiniMax Token Plan endpoint follows current official Anthropic API", () => {
+  let tmpDir, agentsDir, userDir;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    agentsDir = path.join(tmpDir, "agents");
+    userDir = tmpDir;
+    fs.mkdirSync(agentsDir, { recursive: true });
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeAddedModelsYaml(providers) {
+    fs.writeFileSync(
+      path.join(tmpDir, "added-models.yaml"),
+      YAML.dump({ providers }, { indent: 2, lineWidth: -1, sortKeys: false, quotingType: "\"" }),
+      "utf-8",
+    );
+  }
+
+  function readAddedModelsYaml() {
+    return YAML.load(fs.readFileSync(path.join(tmpDir, "added-models.yaml"), "utf-8"));
+  }
+
+  function runFrom34() {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 34 });
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: makeRegistry([]),
+      log: () => {},
+    });
+    return prefs;
+  }
+
+  it("rewrites only the legacy MiniMax Token Plan default endpoint and keeps credentials/models scoped to the provider id", () => {
+    writeAddedModelsYaml({
+      minimax: {
+        base_url: "https://api.minimaxi.com/anthropic",
+        api: "anthropic-messages",
+        api_key: "sk-pay-as-you-go",
+        models: ["MiniMax-M3"],
+      },
+      "minimax-token-plan": {
+        base_url: "https://api.minimax.io/v1",
+        api: "openai-completions",
+        api_key: "sk-token-plan",
+        models: ["MiniMax-M2.7"],
+      },
+    });
+
+    const prefs = runFrom34();
+
+    const raw = readAddedModelsYaml();
+    expect(raw.providers.minimax).toMatchObject({
+      base_url: "https://api.minimaxi.com/anthropic",
+      api: "anthropic-messages",
+      api_key: "sk-pay-as-you-go",
+      models: ["MiniMax-M3"],
+    });
+    expect(raw.providers["minimax-token-plan"]).toMatchObject({
+      base_url: "https://api.minimaxi.com/anthropic",
+      api: "anthropic-messages",
+      api_key: "sk-token-plan",
+      models: ["MiniMax-M2.7"],
+    });
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+  });
+
+  it("does not rewrite custom MiniMax Token Plan proxies", () => {
+    writeAddedModelsYaml({
+      "minimax-token-plan": {
+        base_url: "https://proxy.example.com/minimax/v1",
+        api: "openai-completions",
+        api_key: "sk-token-plan",
+        models: ["MiniMax-M2.7"],
+      },
+    });
+
+    runFrom34();
+
+    const raw = readAddedModelsYaml();
+    expect(raw.providers["minimax-token-plan"]).toMatchObject({
+      base_url: "https://proxy.example.com/minimax/v1",
+      api: "openai-completions",
+      api_key: "sk-token-plan",
+      models: ["MiniMax-M2.7"],
+    });
   });
 });
