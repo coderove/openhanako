@@ -494,11 +494,15 @@
     transition: opacity var(--duration-fast);
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) and (any-pointer: fine) {
     .sessionListScroller:hover .sectionTitleActions,
     .sessionSectionTitle:hover .sectionTitleActions {
         opacity: 1;
     }
+}
+
+.sessionSectionTitle:focus-within .sectionTitleActions {
+    opacity: 1;
 }
 
 .sectionIconButton {

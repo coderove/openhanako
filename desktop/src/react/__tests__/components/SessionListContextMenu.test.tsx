@@ -347,6 +347,16 @@ describe('SessionList context menu', () => {
     expect(css).toMatch(/\.sessionItemActive \.sessionItemMeta,\s*\.sessionItem:focus-visible \.sessionItemMeta/);
   });
 
+  it('reveals section heading actions when any fine hover pointer is available', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '../../components/SessionList.module.css'),
+      'utf-8',
+    );
+
+    expect(css).toMatch(/@media\s*\(any-hover:\s*hover\)\s*and\s*\(any-pointer:\s*fine\)\s*\{[\s\S]*\.sessionListScroller:hover \.sectionTitleActions/);
+    expect(css).toMatch(/\.sessionSectionTitle:focus-within \.sectionTitleActions\s*\{[\s\S]*opacity:\s*1/);
+  });
+
   it('switches views through one Codex-like sort menu on the section heading', async () => {
     makeSessionsToday();
     hanaFetchMock.mockImplementation(async (url: string) => {
