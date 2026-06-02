@@ -949,6 +949,13 @@ export class HanaEngine {
   setAppearance(p) { return this._prefs.setAppearance(p); }
   getWorkspaceUiState(workspaceRoot, surface) { return this._prefs.getWorkspaceUiState(workspaceRoot, surface); }
   setWorkspaceUiState(workspaceRoot, surface, state) { return this._prefs.setWorkspaceUiState(workspaceRoot, surface, state); }
+  gcWorkspacePersistence(options = {}) {
+    const configResults = options?.agentId
+      ? [this._configCoord.gcWorkspaceConfig(options.agentId, options)]
+      : this._configCoord.gcAllWorkspaceConfigs(options);
+    const workspaceUiState = this._prefs.gcWorkspaceUiState(options);
+    return { configResults, workspaceUiState };
+  }
   getSidebarUiPrefs() { return this._prefs.getSidebarUiPrefs(); }
   setSidebarUiPrefs(partial) { return this._prefs.setSidebarUiPrefs(partial); }
   getPluginUiPrefs() { return this._prefs.getPluginUiPrefs(); }

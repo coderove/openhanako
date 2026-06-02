@@ -177,6 +177,7 @@ export function createAgentsRoute(engine) {
 
   route.get("/agents", async (c) => {
     try {
+      await engine.gcWorkspacePersistence?.();
       return c.json({ agents: engine.listAgents() });
     } catch (err) {
       return c.json({ error: err.message }, 500);
