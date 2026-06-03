@@ -130,13 +130,13 @@
 }
 
 .messageFooterActionsRight {
+    align-self: flex-end;
     justify-content: flex-end;
-    padding-right: 5px;
 }
 
 .messageFooterActionsLeft {
+    align-self: flex-start;
     justify-content: flex-start;
-    padding-left: 5px;
 }
 
 .messageGroupUser:hover .messageFooterActions,
@@ -145,6 +145,10 @@
 .messageFooterActionsVisible {
     opacity: 0.72;
     pointer-events: auto;
+}
+
+.messageFooterActionsTimePersistent {
+    opacity: 0.72;
 }
 
 .messageFooterActions:hover {
@@ -186,6 +190,19 @@
 .messageFooterBtn:disabled {
     opacity: 0.35;
     cursor: default;
+}
+
+.messageFooterActionsTimePersistent .messageFooterBtn {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.messageGroupUser:hover .messageFooterActionsTimePersistent .messageFooterBtn,
+.messageGroupAssistant:hover .messageFooterActionsTimePersistent .messageFooterBtn,
+.messageFooterActionsTimePersistent:focus-within .messageFooterBtn,
+.messageFooterActionsTimePersistent:hover .messageFooterBtn {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .messageFooterBtnActive {

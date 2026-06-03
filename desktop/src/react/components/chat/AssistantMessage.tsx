@@ -127,9 +127,10 @@ export const AssistantMessage = memo(function AssistantMessage({
     }
   }, [isStreaming, retrying, retrySourceMessage, sessionPath]);
 
-  const canShowCompletionFooter = !readOnly && isLatestAssistantMessage && !!retrySourceMessage && !isStreaming;
+  const canShowRegenerateAction = !readOnly && isLatestAssistantMessage && !!retrySourceMessage && !isStreaming;
+  const shouldPersistCompletionTime = isLatestAssistantMessage && !isStreaming;
   const timeText = formatMessageTime(message.timestamp);
-  const footerActions: MessageFooterAction[] = useMemo(() => [
+  const regenerateActions: MessageFooterAction[] = useMemo(() => [
     {
       id: 'regenerate',
       title: t('common.regenerate'),
@@ -138,6 +139,7 @@ export const AssistantMessage = memo(function AssistantMessage({
       disabled: retrying || isStreaming,
     },
   ], [handleRegenerate, isStreaming, retrying, t]);
+  const footerActions = canShowRegenerateAction ? regenerateActions : [];
 
   return (
     <div className={`${styles.messageGroup} ${styles.messageGroupAssistant}${isSelected ? ` ${styles.messageGroupSelected}` : ''}`}
@@ -185,11 +187,11 @@ export const AssistantMessage = memo(function AssistantMessage({
           isStreaming={isStreaming}
         />
       )}
-      {canShowCompletionFooter && (
+      {(timeText || footerActions.length > 0) && (
         <MessageFooterActions
           align="left"
-          visible
           timeText={timeText}
+          timePersistent={shouldPersistCompletionTime}
           actions={footerActions}
           testId="assistant-completion-actions"
         />

@@ -95,14 +95,33 @@ describe('AssistantMessage completion actions', () => {
     );
 
     expect(screen.getByText('05:43')).toBeInTheDocument();
-    expect(within(screen.getByTestId('assistant-completion-actions')).queryByTitle('复制文本')).not.toBeInTheDocument();
+    const footer = screen.getByTestId('assistant-completion-actions');
+    expect(footer.className).not.toContain('messageFooterActionsVisible');
+    expect(footer.className).toContain('messageFooterActionsTimePersistent');
+    expect(within(footer).queryByTitle('复制文本')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle('重新生成'));
 
     expect(replayMock).toHaveBeenCalledWith(sessionPath, userMessage);
   });
 
-  it('hides the completion footer while the assistant reply is still streaming', () => {
+  it('keeps time available for older assistant replies without retry controls', () => {
+    render(
+      <AssistantMessage
+        message={assistantMessage}
+        showAvatar={false}
+        sessionPath={sessionPath}
+        isLatestAssistantMessage={false}
+        retrySourceMessage={userMessage}
+      />,
+    );
+
+    expect(screen.getByText('05:43')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant-completion-actions').className).not.toContain('messageFooterActionsTimePersistent');
+    expect(screen.queryByTitle('重新生成')).not.toBeInTheDocument();
+  });
+
+  it('hides retry while the assistant reply is still streaming but keeps the timestamp available', () => {
     useStore.setState({ streamingSessions: [sessionPath] } as never);
 
     render(
@@ -115,7 +134,8 @@ describe('AssistantMessage completion actions', () => {
       />,
     );
 
-    expect(screen.queryByText('05:43')).not.toBeInTheDocument();
+    expect(screen.getByText('05:43')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant-completion-actions').className).not.toContain('messageFooterActionsTimePersistent');
     expect(screen.queryByTitle('重新生成')).not.toBeInTheDocument();
   });
 });

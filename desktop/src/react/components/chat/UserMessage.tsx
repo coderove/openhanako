@@ -138,7 +138,7 @@ export const UserMessage = memo(function UserMessage({
       disabled: busy || !editValue.trim(),
     },
   ], [busy, editValue, handleCancelEdit, handleConfirmEdit, t]);
-  const defaultActions: MessageFooterAction[] = useMemo(() => [
+  const latestActions: MessageFooterAction[] = useMemo(() => canShowLatestActions ? [
     {
       id: 'copy',
       title: t('common.copyText'),
@@ -161,7 +161,8 @@ export const UserMessage = memo(function UserMessage({
       onClick: () => handleEdit(),
       disabled: isStreaming || busy,
     },
-  ], [busy, copied, handleCopy, handleEdit, handleRegenerate, isStreaming, t]);
+  ] : [], [busy, canShowLatestActions, copied, handleCopy, handleEdit, handleRegenerate, isStreaming, t]);
+  const footerActions = editing ? editingActions : latestActions;
 
   return (
     <div className={`${styles.messageGroup} ${styles.messageGroupUser}${isSelected ? ` ${styles.messageGroupSelected}` : ''}`}
@@ -225,12 +226,12 @@ export const UserMessage = memo(function UserMessage({
           message.textHtml && <MarkdownContent html={message.textHtml} linkContext={{ origin: 'session', sessionPath, messageId: message.id }} />
         )}
       </div>
-      {canShowLatestActions && (
+      {(timeText || footerActions.length > 0) && (
         <MessageFooterActions
           align="right"
           timeText={timeText}
           visible={editing}
-          actions={editing ? editingActions : defaultActions}
+          actions={footerActions}
         />
       )}
     </div>

@@ -42,4 +42,34 @@ describe('MessageActions layout', () => {
     expect(block).toMatch(/background:\s*rgba\(var\(--accent-rgb\),\s*0\.16\)/);
   });
 
+  it('keeps the left footer timestamp flush with the assistant message body', () => {
+    const css = readChatCss();
+    const block = css.match(/\.messageFooterActionsLeft\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+
+    expect(block).toMatch(/align-self:\s*flex-start/);
+    expect(block).toMatch(/justify-content:\s*flex-start/);
+    expect(block).not.toMatch(/padding-left/);
+  });
+
+  it('right-aligns the whole user footer action row with the user message body', () => {
+    const css = readChatCss();
+    const block = css.match(/\.messageFooterActionsRight\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+
+    expect(block).toMatch(/align-self:\s*flex-end/);
+    expect(block).toMatch(/justify-content:\s*flex-end/);
+    expect(block).not.toMatch(/padding-right/);
+  });
+
+  it('keeps persistent footer time visible without making footer buttons permanent', () => {
+    const css = readChatCss();
+    const timeBlock = css.match(/\.messageFooterActionsTimePersistent\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+    const buttonBlock = css.match(/\.messageFooterActionsTimePersistent \.messageFooterBtn\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+    const hoverRule = css.match(/\.messageGroupUser:hover \.messageFooterActionsTimePersistent \.messageFooterBtn,\s*\.messageGroupAssistant:hover \.messageFooterActionsTimePersistent \.messageFooterBtn,\s*\.messageFooterActionsTimePersistent:focus-within \.messageFooterBtn,\s*\.messageFooterActionsTimePersistent:hover \.messageFooterBtn\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+
+    expect(timeBlock).toMatch(/opacity:\s*0\.72/);
+    expect(buttonBlock).toMatch(/opacity:\s*0/);
+    expect(buttonBlock).toMatch(/pointer-events:\s*none/);
+    expect(hoverRule).toMatch(/opacity:\s*1/);
+    expect(hoverRule).toMatch(/pointer-events:\s*auto/);
+  });
 });
