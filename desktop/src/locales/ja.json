@@ -741,6 +741,8 @@
       "midnightContrastMode": "くっきり",
       "auto": "自動",
       "autoMode": "システム",
+      "font": "フォント",
+      "fontHint": "本文の閲覧に使うフォントを選択します",
       "serifFont": "明朝体",
       "serifFontHint": "本文に明朝体を使用する",
       "paperTexture": "和紙の質感",
@@ -749,6 +751,13 @@
       "leavesOverlay": "晴れモード",
       "leavesOverlayHint": "たまには日向ぼっこしよう"
     },
+    "fonts": {
+      "followReading": "閲覧フォントに従う",
+      "serifName": "明朝",
+      "serifDesc": "本文の閲覧向け",
+      "sansName": "ゴシック",
+      "sansDesc": "システム UI に近い"
+    },
     "interface": {
       "system": "システム",
       "hardwareAcceleration": "ハードウェアアクセラレーション",
@@ -756,6 +765,8 @@
     },
     "editor": {
       "title": "エディター",
+      "markdownFont": "フォント",
+      "markdownFontHint": "既定では外観の閲覧フォントに従います。エディターだけ別に指定することもできます。",
       "markdownBodyFontSize": "本文サイズ",
       "markdownBodyFontSizeHint": "Markdown エディターの本文は、15px を既定にします。",
       "markdownHeading1FontSize": "見出し 1 サイズ",
@@ -1505,6 +1516,9 @@
       "desc": "会話スクリーンショットのスタイルとレイアウトを選択します",
       "color": "カラー",
       "width": "幅",
+      "font": "フォント",
+      "fontLabel": "スクリーンショットのフォント",
+      "fontHint": "個別フォントを選ばない場合、外観の閲覧フォントに従います。",
       "light": "ライト",
       "dark": "ダーク",
       "sakura": "青空と桜",

@@ -741,6 +741,8 @@
       "midnightContrastMode": "清晰",
       "auto": "自動",
       "autoMode": "跟隨系統",
+      "font": "字體",
+      "fontHint": "選擇正文閱讀使用的字體",
       "serifFont": "襯線字體",
       "serifFontHint": "使用襯線體顯示正文內容",
       "paperTexture": "紙質紋理",
@@ -749,6 +751,13 @@
       "leavesOverlay": "晴天模式",
       "leavesOverlayHint": "沒事兒曬曬太陽"
     },
+    "fonts": {
+      "followReading": "跟隨閱讀字體",
+      "serifName": "襯線",
+      "serifDesc": "適合正文閱讀",
+      "sansName": "非襯線",
+      "sansDesc": "更接近系統介面"
+    },
     "interface": {
       "system": "系統",
       "hardwareAcceleration": "硬體加速",
@@ -756,6 +765,8 @@
     },
     "editor": {
       "title": "編輯器",
+      "markdownFont": "字體",
+      "markdownFontHint": "預設跟隨外觀裡的閱讀字體，也可以單獨指定。",
       "markdownBodyFontSize": "正文字號",
       "markdownBodyFontSizeHint": "Markdown 編輯器正文預設使用 15px。",
       "markdownHeading1FontSize": "一級標題字號",
@@ -1497,6 +1508,9 @@
       "desc": "選擇你分享對話的截圖樣式與排版",
       "color": "配色",
       "width": "寬度",
+      "font": "字體",
+      "fontLabel": "截圖字體",
+      "fontHint": "不選單獨字體時，截圖會跟隨外觀裡的閱讀字體。",
       "light": "淺色",
       "dark": "深色",
       "sakura": "青空與櫻",

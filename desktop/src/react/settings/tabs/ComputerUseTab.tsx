@@ -161,13 +161,14 @@ export function ComputerUseTab() {
 
   return (
     <div className={`${styles['settings-tab-content']} ${styles['active']}`} data-tab="computer">
-      <SettingsSection title={t('settings.computerUse.title')} context={refreshButton}>
+      <SettingsSection
+        title={t('settings.computerUse.title')}
+        description={t('settings.computerUse.description')}
+        context={refreshButton}
+      >
         <SettingsSection.Warning data-testid="computer-use-experimental-warning">
           {t('settings.computerUse.experimentalWarning')}
         </SettingsSection.Warning>
-        <SettingsSection.Note>
-          {t('settings.computerUse.description')}
-        </SettingsSection.Note>
         <SettingsRow
           label={t('settings.computerUse.enabled')}
           hint={t('settings.computerUse.enabledHint')}

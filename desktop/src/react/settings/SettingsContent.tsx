@@ -99,6 +99,10 @@ const TAB_TITLES: Record<string, string> = {
   about: '关于',
 };
 
+const TAB_DESCRIPTION_KEYS: Record<string, string> = {
+  experiments: 'settings.experiments.description',
+};
+
 function normalizeNativeTabForPlatform(tab: string, platformName: string | null | undefined): string {
   return platformName === 'linux' && tab === 'computer' ? 'agent' : tab;
 }
@@ -197,6 +201,8 @@ export function SettingsContent({
     || AgentTab;
   const isModal = variant === 'modal';
   const activeTabTitle = TAB_TITLES[effectiveActiveTab] || titleToLabel(dynamicTab?.title);
+  const activeTabDescriptionKey = TAB_DESCRIPTION_KEYS[effectiveActiveTab];
+  const activeTabDescription = activeTabDescriptionKey ? t(activeTabDescriptionKey) : '';
   const isWideTab = effectiveActiveTab === 'plugin-marketplace' || effectiveActiveTab === 'providers';
 
   const reportActiveTabChange = useCallback((tab: string) => {
@@ -248,7 +254,12 @@ export function SettingsContent({
           <SettingsNav onTabChange={reportActiveTabChange} />
           <div className={`${styles['settings-main']}${isWideTab ? ' ' + styles['settings-main-wide'] : ''}`}>
             {!isModal && (
-              <h1 className={styles['settings-tab-title']}>{activeTabTitle}</h1>
+              <div className={styles['settings-tab-heading']}>
+                <h1 className={styles['settings-tab-title']}>{activeTabTitle}</h1>
+                {activeTabDescription && (
+                  <p className={styles['settings-tab-description']}>{activeTabDescription}</p>
+                )}
+              </div>
             )}
             <ErrorBoundary region={effectiveActiveTab} resetKeys={[effectiveActiveTab]}>
               <ActiveTab />

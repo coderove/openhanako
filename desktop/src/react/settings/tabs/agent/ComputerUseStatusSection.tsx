@@ -91,10 +91,11 @@ export function ComputerUseStatusSection({ visible }: { visible: boolean }) {
   );
 
   return (
-    <SettingsSection title={t('settings.agent.computerUse.title')} context={refreshButton}>
-      <SettingsSection.Note>
-        {t('settings.agent.computerUse.description')}
-      </SettingsSection.Note>
+    <SettingsSection
+      title={t('settings.agent.computerUse.title')}
+      description={t('settings.agent.computerUse.description')}
+      context={refreshButton}
+    >
       <SettingsRow
         label={t('settings.agent.computerUse.provider')}
         control={<StatusText ok={!!data?.selectedProviderId} text={data?.selectedProviderId || '-'} />}

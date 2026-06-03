@@ -20,7 +20,7 @@ export const markdownTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': {
     overflow: 'auto',
-    fontFamily: 'var(--font-serif)',
+    fontFamily: 'var(--editor-markdown-font-family, var(--font-serif))',
     lineHeight: 'var(--editor-markdown-line-height)',
     padding: 'var(--space-md) 0',
   },
@@ -40,7 +40,7 @@ export const markdownTheme = EditorView.theme({
     padding: '0 1px',
   },
   '.cm-math-widget': {
-    fontFamily: 'var(--font-serif)',
+    fontFamily: 'var(--editor-markdown-font-family, var(--font-serif))',
   },
   '.cm-math-block-widget': {
     display: 'block',

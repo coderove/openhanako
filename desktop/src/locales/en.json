@@ -696,6 +696,7 @@
     },
     "experiments": {
       "title": "Experiments",
+      "memoryTitle": "Cache Memory",
       "description": "Forward-looking features land here first. Once stable, they move to the settings page where they belong.",
       "empty": "No visible experiments",
       "owner": {
@@ -758,6 +759,8 @@
       "midnightContrastMode": "Clear",
       "auto": "Auto",
       "autoMode": "System",
+      "font": "Font",
+      "fontHint": "Choose the font used for body reading.",
       "serifFont": "Serif Font",
       "serifFontHint": "Use serif font for body text",
       "paperTexture": "Paper Texture",
@@ -766,6 +769,13 @@
       "leavesOverlay": "Sunny Mode",
       "leavesOverlayHint": "Go touch some grass (and sunlight)"
     },
+    "fonts": {
+      "followReading": "Follow Reading Font",
+      "serifName": "Serif",
+      "serifDesc": "For body reading",
+      "sansName": "Sans",
+      "sansDesc": "Closer to system UI"
+    },
     "interface": {
       "system": "System",
       "hardwareAcceleration": "Hardware Acceleration",
@@ -773,6 +783,8 @@
     },
     "editor": {
       "title": "Editor",
+      "markdownFont": "Font",
+      "markdownFontHint": "Follow the appearance reading font by default, or choose one just for the editor.",
       "markdownBodyFontSize": "Body Size",
       "markdownBodyFontSizeHint": "Markdown body text defaults to 15px.",
       "markdownHeading1FontSize": "Heading 1 Size",
@@ -1545,6 +1557,9 @@
       "desc": "Choose the style and layout for sharing conversation screenshots",
       "color": "Color",
       "width": "Width",
+      "font": "Font",
+      "fontLabel": "Screenshot Font",
+      "fontHint": "When no screenshot font is selected, screenshots follow the appearance reading font.",
       "light": "Light",
       "dark": "Dark",
       "sakura": "Sakura",

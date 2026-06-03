@@ -68,7 +68,7 @@
     font-size: var(--editor-markdown-font-size);
     font-weight: 400;
     line-height: var(--editor-markdown-line-height);
-    font-family: var(--font-serif);
+    font-family: var(--editor-markdown-font-family, var(--font-serif));
 }
 
 .previewPanelBody :global(.markdown-cover) {
@@ -610,7 +610,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9em;
-    font-family: var(--font-serif);
+    font-family: var(--editor-markdown-font-family, var(--font-serif));
 }
 
 :global(.cm-table-widget th),
@@ -683,7 +683,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85em;
-    font-family: var(--font-serif);
+    font-family: var(--editor-markdown-font-family, var(--font-serif));
 }
 
 :global(.cm-csv-table-widget th),

@@ -23,6 +23,7 @@ describe('screenshot utils', () => {
 
   beforeEach(() => {
     notices.length = 0;
+    const storage = new Map<string, string>();
     storeMock.state = {
       homeFolder: '/tmp/hana-home',
       chatSessions: {},
@@ -35,10 +36,10 @@ describe('screenshot utils', () => {
       endScreenshotTask: vi.fn(),
     };
     vi.stubGlobal('localStorage', {
-      getItem: vi.fn(() => null),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-      clear: vi.fn(),
+      getItem: vi.fn((key: string) => storage.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => storage.set(key, value)),
+      removeItem: vi.fn((key: string) => storage.delete(key)),
+      clear: vi.fn(() => storage.clear()),
     });
     window.i18n = { locale: 'zh' } as typeof window.i18n;
     window.addEventListener('hana-inline-notice', noticeHandler);
@@ -108,6 +109,33 @@ describe('screenshot utils', () => {
       filePath: '/vault/app.ts',
       articleType: 'code',
       language: 'ts',
+    }));
+  });
+
+  it('screenshot font follows the reading font when no screenshot override is selected', async () => {
+    localStorage.setItem('hana-font-serif', '0');
+    (window as any).hana = {
+      screenshotRender: vi.fn().mockResolvedValue({ success: true, dir: '/tmp/hana-home/截图' }),
+    };
+
+    await expect(takeArticleScreenshot('# hello')).resolves.toBeUndefined();
+
+    expect((window as any).hana.screenshotRender).toHaveBeenCalledWith(expect.objectContaining({
+      fontFamily: expect.stringContaining('Inter'),
+    }));
+  });
+
+  it('screenshot font can override the reading font explicitly', async () => {
+    localStorage.setItem('hana-font-serif', '0');
+    localStorage.setItem('hana-screenshot-font', 'serif');
+    (window as any).hana = {
+      screenshotRender: vi.fn().mockResolvedValue({ success: true, dir: '/tmp/hana-home/截图' }),
+    };
+
+    await expect(takeArticleScreenshot('# hello')).resolves.toBeUndefined();
+
+    expect((window as any).hana.screenshotRender).toHaveBeenCalledWith(expect.objectContaining({
+      fontFamily: expect.stringContaining('Noto Serif SC'),
     }));
   });
 

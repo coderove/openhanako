@@ -2654,7 +2654,8 @@ function buildScreenshotHTML(payload) {
 
   const katexCSS = _getKatexCSS();
 
-  let extraCSS = `:root { --screenshot-page-bg: ${themeConf.backgroundColor}; }`;
+  const screenshotFontFamily = sanitizeScreenshotFontFamily(payload.fontFamily);
+  let extraCSS = `:root { --screenshot-page-bg: ${themeConf.backgroundColor}; --screenshot-font-family: ${screenshotFontFamily}; }`;
   if (themeName.startsWith("sakura-")) {
     const isDesktop = themeName.endsWith("-desktop");
     const branchFile = isDesktop ? "sakura-branch-desktop.png" : "sakura-branch-mobile.png";
@@ -2787,6 +2788,15 @@ function buildScreenshotHTML(payload) {
   </footer>
 </body>
 </html>`;
+}
+
+function sanitizeScreenshotFontFamily(value) {
+  const fallback = `"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong", "Lora", "Georgia", serif`;
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  if (/[;{}()<>\n\r]/.test(trimmed)) return fallback;
+  return trimmed;
 }
 
 async function screenshotCapture(htmlContent, width) {

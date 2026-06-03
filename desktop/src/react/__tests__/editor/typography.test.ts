@@ -16,6 +16,7 @@ function readPreviewStyles(): string {
 
 describe('editor typography settings', () => {
   it('uses markdown defaults and preserves future heading controls', () => {
+    expect(DEFAULT_EDITOR_TYPOGRAPHY.markdown.fontPreset).toBe('follow');
     expect(DEFAULT_EDITOR_TYPOGRAPHY.markdown.bodyFontSize).toBe(15);
     expect(DEFAULT_EDITOR_TYPOGRAPHY.markdown.heading1FontSize).toBe(24);
     expect(DEFAULT_EDITOR_TYPOGRAPHY.markdown.heading2FontSize).toBe(20);
@@ -35,9 +36,11 @@ describe('editor typography settings', () => {
         heading6FontSize: 80,
         lineHeight: 'wide',
         contentPadding: -12,
+        fontPreset: 'comic',
       },
     });
 
+    expect(normalized.markdown.fontPreset).toBe('follow');
     expect(normalized.markdown.bodyFontSize).toBe(24);
     expect(normalized.markdown.heading1FontSize).toBe(16);
     expect(normalized.markdown.heading2FontSize).toBe(20);
@@ -45,6 +48,9 @@ describe('editor typography settings', () => {
     expect(normalized.markdown.lineHeight).toBe(1.72);
     expect(normalized.markdown.contentPadding).toBe(0);
     expect(DEFAULT_EDITOR_TYPOGRAPHY.markdown.contentPadding).toBe(24);
+
+    const selected = normalizeEditorTypography({ markdown: { fontPreset: 'sans' } });
+    expect(selected.markdown.fontPreset).toBe('sans');
   });
 
   it('applies normalized typography as document-level CSS variables', () => {
@@ -67,10 +73,12 @@ describe('editor typography settings', () => {
         heading6FontSize: 16,
         lineHeight: 1.8,
         contentPadding: 28,
+        fontPreset: 'sans',
       },
     }, root);
 
     const style = root.style;
+    expect(style.getPropertyValue('--editor-markdown-font-family')).toBe('var(--font-ui)');
     expect(style.getPropertyValue('--editor-markdown-font-size')).toBe('17px');
     expect(style.getPropertyValue('--editor-markdown-h1-font-size')).toBe('26px');
     expect(style.getPropertyValue('--editor-markdown-h2-font-size')).toBe('21px');
@@ -86,6 +94,7 @@ describe('editor typography settings', () => {
     const css = readPreviewStyles();
 
     expect(css).toMatch(/:global\(\.preview-markdown\)\s*\{[\s\S]*font-size:\s*var\(--editor-markdown-font-size\)/);
+    expect(css).toMatch(/:global\(\.preview-markdown\)\s*\{[\s\S]*font-family:\s*var\(--editor-markdown-font-family,\s*var\(--font-serif\)\)/);
     expect(css).toMatch(/:global\(\.preview-markdown\)\s*\{[\s\S]*font-weight:\s*400/);
     expect(css).toMatch(/:global\(\.preview-markdown\) h1\s*\{[\s\S]*font-size:\s*var\(--editor-markdown-h1-font-size\)[\s\S]*font-weight:\s*700/);
 

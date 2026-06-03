@@ -209,7 +209,6 @@ function CacheSnapshotExperiment({ experiment, onValueChange }: {
 
   const hint = [
     experimentHint(experiment),
-    t(experiment.descriptionKey),
     mode === 'write' ? t('settings.experiments.cacheSnapshot.writeWarning') : '',
   ].filter(Boolean).join(' · ');
 
@@ -279,8 +278,10 @@ export function ExperimentsTab() {
 
   return (
     <>
-      <SettingsSection title={t('settings.experiments.title')}>
-        <SettingsSection.Note>{t('settings.experiments.description')}</SettingsSection.Note>
+      <SettingsSection
+        title={t('settings.experiments.memoryTitle')}
+        description={t('settings.experiments.cacheSnapshot.description')}
+      >
         {loading ? (
           <div className={styles['experiments-empty']}>Loading...</div>
         ) : memoryExperiments.length === 0 ? (

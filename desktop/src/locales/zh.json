@@ -696,6 +696,7 @@
     },
     "experiments": {
       "title": "实验",
+      "memoryTitle": "缓存记忆",
       "description": "前沿能力会先放在这里观察。稳定后会迁移到它真正归属的设置页。",
       "empty": "暂无可见实验功能",
       "owner": {
@@ -758,6 +759,8 @@
       "midnightContrastMode": "清晰",
       "auto": "自动",
       "autoMode": "跟随系统",
+      "font": "字体",
+      "fontHint": "选择正文阅读使用的字体",
       "serifFont": "衬线字体",
       "serifFontHint": "使用衬线体显示正文内容",
       "paperTexture": "纸质纹理",
@@ -766,6 +769,13 @@
       "leavesOverlay": "晴天模式",
       "leavesOverlayHint": "没事儿晒晒太阳"
     },
+    "fonts": {
+      "followReading": "跟随阅读字体",
+      "serifName": "衬线",
+      "serifDesc": "适合正文阅读",
+      "sansName": "非衬线",
+      "sansDesc": "更接近系统界面"
+    },
     "interface": {
       "system": "系统",
       "hardwareAcceleration": "硬件加速",
@@ -773,6 +783,8 @@
     },
     "editor": {
       "title": "编辑器",
+      "markdownFont": "字体",
+      "markdownFontHint": "默认跟随外观里的阅读字体，也可以单独指定。",
       "markdownBodyFontSize": "正文字号",
       "markdownBodyFontSizeHint": "Markdown 编辑器正文默认使用 15px。",
       "markdownHeading1FontSize": "一级标题字号",
@@ -1545,6 +1557,9 @@
       "desc": "选择你分享对话的截图样式与排版",
       "color": "配色",
       "width": "宽度",
+      "font": "字体",
+      "fontLabel": "截图字体",
+      "fontHint": "不选单独字体时，截图会跟随外观里的阅读字体。",
       "light": "浅色",
       "dark": "深色",
       "sakura": "青空与樱",

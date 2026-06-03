@@ -741,6 +741,8 @@
       "midnightContrastMode": "선명",
       "auto": "자동",
       "autoMode": "시스템",
+      "font": "글꼴",
+      "fontHint": "본문 읽기에 사용할 글꼴을 선택해요",
       "serifFont": "명조 글꼴",
       "serifFontHint": "본문에 명조 글꼴을 사용해요",
       "paperTexture": "종이 질감",
@@ -749,6 +751,13 @@
       "leavesOverlay": "맑은 날 모드",
       "leavesOverlayHint": "가끔은 햇볕도 쬐어요"
     },
+    "fonts": {
+      "followReading": "읽기 글꼴 따르기",
+      "serifName": "명조",
+      "serifDesc": "본문 읽기에 적합",
+      "sansName": "고딕",
+      "sansDesc": "시스템 UI에 가까움"
+    },
     "interface": {
       "system": "시스템",
       "hardwareAcceleration": "하드웨어 가속",
@@ -756,6 +765,8 @@
     },
     "editor": {
       "title": "편집기",
+      "markdownFont": "글꼴",
+      "markdownFontHint": "기본값은 외관의 읽기 글꼴을 따르며, 편집기만 따로 지정할 수도 있어요.",
       "markdownBodyFontSize": "본문 크기",
       "markdownBodyFontSizeHint": "Markdown 편집기 본문은 15px를 기본값으로 사용해요.",
       "markdownHeading1FontSize": "제목 1 크기",
@@ -1505,6 +1516,9 @@
       "desc": "대화 스크린샷의 스타일과 레이아웃을 선택하세요",
       "color": "색상",
       "width": "너비",
+      "font": "글꼴",
+      "fontLabel": "스크린샷 글꼴",
+      "fontHint": "별도 글꼴을 선택하지 않으면 외관의 읽기 글꼴을 따릅니다.",
       "light": "라이트",
       "dark": "다크",
       "sakura": "푸른 하늘과 벚꽃",

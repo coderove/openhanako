@@ -17,6 +17,13 @@ import {
   isPaperTextureEnabled,
 } from '../../../shared/appearance-preferences';
 import { persistAppearancePreferences } from '../../services/appearance-sync';
+import {
+  FOLLOW_READING_FONT_ID,
+  READING_FONT_PRESETS,
+  fontPresetIdFromSerif,
+  normalizeFontSelectionId,
+  serifFromFontPresetId,
+} from '../../utils/font-presets';
 import styles from '../Settings.module.css';
 import registry from '../../../shared/theme-registry';
 
@@ -33,7 +40,7 @@ const THEME_MODE_KEYS: Record<string, string> = Object.fromEntries([
   [registry.AUTO_OPTION.id, registry.AUTO_OPTION.i18nMode],
 ]);
 
-type MarkdownTypographyKey = keyof EditorMarkdownTypography;
+type MarkdownTypographyKey = Exclude<keyof EditorMarkdownTypography, 'fontPreset'>;
 
 interface AppearancePrefs {
   currentTheme: string;
@@ -85,10 +92,18 @@ export function InterfaceTab() {
     paperTextureBlocked,
     leavesOverlayEnabled,
   } = appearancePrefs;
+  const readingFontPresetId = fontPresetIdFromSerif(serifEnabled);
   const editorTypography = useMemo(
     () => normalizeEditorTypography(settingsConfig?.editor),
     [settingsConfig?.editor],
   );
+  const fontSelectOptions = [
+    { value: FOLLOW_READING_FONT_ID, label: t('settings.fonts.followReading') },
+    ...READING_FONT_PRESETS.map(preset => ({
+      value: preset.id,
+      label: t(preset.labelKey),
+    })),
+  ];
   const hardwareAccelerationEnabled = settingsConfig?.hardware_acceleration !== false;
 
   const saveEditorTypography = async (patch: Partial<EditorMarkdownTypography>) => {
@@ -176,22 +191,36 @@ export function InterfaceTab() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title={t('settings.appearance.title')}>
-        <SettingsRow
-          label={t('settings.appearance.serifFont')}
-          hint={t('settings.appearance.serifFontHint')}
-          control={
-            <Toggle
-              on={serifEnabled}
-              onChange={(next) => {
+      <SettingsSection
+        title={t('settings.appearance.font')}
+        description={t('settings.appearance.fontHint')}
+        variant="flush"
+      >
+        <div className={styles['font-options']} aria-label={t('settings.appearance.font')}>
+          {READING_FONT_PRESETS.map(preset => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`${styles['font-card']}${readingFontPresetId === preset.id ? ' ' + styles['active'] : ''}`}
+              aria-pressed={readingFontPresetId === preset.id}
+              onClick={() => {
+                const next = serifFromFontPresetId(preset.id);
                 window.setSerifFont?.(next);
                 platform?.settingsChanged?.('font-changed', { serif: next });
                 syncAppearancePrefs({ serif: next });
                 refreshAppearancePrefs();
               }}
-            />
-          }
-        />
+            >
+              <span className={styles['font-card-sample']} style={{ fontFamily: preset.fontFamily }}>
+                {t(preset.labelKey)}
+              </span>
+              <span className={styles['font-card-desc']}>{t(preset.descriptionKey)}</span>
+            </button>
+          ))}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.appearance.title')}>
         <SettingsRow
           label={t('settings.appearance.paperTexture')}
           hint={paperTextureBlocked
@@ -244,6 +273,22 @@ export function InterfaceTab() {
       </SettingsSection>
 
       <SettingsSection title={t('settings.editor.title')}>
+        <SettingsRow
+          label={t('settings.editor.markdownFont')}
+          hint={t('settings.editor.markdownFontHint')}
+          control={
+            <SelectWidget
+              options={fontSelectOptions}
+              value={editorTypography.markdown.fontPreset}
+              onChange={(value) => saveEditorTypography({
+                fontPreset: normalizeFontSelectionId(value, {
+                  allowFollow: true,
+                  fallback: FOLLOW_READING_FONT_ID,
+                }),
+              })}
+            />
+          }
+        />
         {EDITOR_FONT_SIZE_ROWS.map(row => (
           <SettingsRow
             key={row.key}
