@@ -683,7 +683,6 @@
       "models": "モデル",
       "memory": "記憶",
       "work": "ワークスペース",
-      "computer": "コンピューターを使う",
       "skills": "スキル",
       "mcp": "Connectors",
       "bridge": "ソーシャル",
@@ -844,26 +843,12 @@
           "automation": { "label": "自動化", "summary": "通知とプラグインのスケジュール動作を Agent が作成できるようにします" },
           "beautify": { "label": "小花美术", "summary": "Agent にドキュメントカバーと美的な強化を生成させます" },
           "browser": { "label": "ブラウザ", "summary": "ヘッドレスブラウザを操作してウェブを閲覧" },
-          "computer": { "label": "Computer Use", "summary": "承認済みのデスクトップアプリを操作し、動作カーソルを表示します" },
           "cron": { "label": "定期実行", "summary": "指定した時刻にタスクを自動実行" },
           "dm": { "label": "ダイレクトメッセージ", "summary": "別のエージェントに 1 対 1 のメッセージを送信" },
           "install_skill": { "label": "スキルをインストール", "summary": "GitHub またはスキルライブラリから新しいスキルをインストール" },
           "update_settings": { "label": "設定を変更", "summary": "Agent にアプリ設定の変更を許可" },
           "workflow": { "label": "Workflow", "summary": "Agent に複数 Agent のワークフロースクリプトをバックグラウンドタスクとして実行させる" }
         }
-      },
-      "computerUse": {
-        "title": "Computer Use 状態",
-        "description": "基盤 provider、OS 権限、承認済みアプリを表示します。有効化は上のツールスイッチで行います。",
-        "provider": "Provider",
-        "availability": "利用状況",
-        "available": "利用可能",
-        "unavailable": "利用不可",
-        "permissions": "OS 権限",
-        "permissionsEmpty": "追加権限なし、または未取得",
-        "approvals": "承認済みアプリ",
-        "approvalsEmpty": "なし",
-        "refresh": "更新"
       }
     },
     "about": {
@@ -2396,6 +2381,8 @@
       "timezoneDesc": "IANA タイムゾーン（例: Asia/Shanghai）",
       "bridgeMediaPublicBaseUrl": "Bridge ファイル公開 URL",
       "bridgeMediaPublicBaseUrlDesc": "外部プラットフォームがローカル staged ファイルを取得するための公開 HTTP/HTTPS base URL。通常はリバースプロキシまたは tunnel で提供します。空にすると HANA_BRIDGE_PUBLIC_BASE_URL にフォールバックします。",
+      "computerUse": "Computer Use",
+      "computerUseDesc": "有効にすると、新しい会話で主 Agent に computer ツールを公開します。無効にすると新しい会話には表示されず、凍結済みの古い会話が呼び出した場合は拒否されます。",
       "thinkingBudget": "思考の深さ",
       "memory": "メモリシステム",
       "memoryDesc": "現在の Agent のメモリ機能を有効/無効にする",

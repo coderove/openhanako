@@ -683,7 +683,6 @@
       "models": "Models",
       "memory": "Memory",
       "work": "Workspace",
-      "computer": "Use Computer",
       "skills": "Skills",
       "mcp": "Connectors",
       "bridge": "Social",
@@ -885,26 +884,12 @@
           "automation": { "label": "Automation", "summary": "Let the agent create scheduled notifications and plugin actions" },
           "beautify": { "label": "小花美术", "summary": "Let the agent generate document covers and aesthetic enhancements" },
           "browser": { "label": "Browser", "summary": "Control a headless browser to navigate web pages" },
-          "computer": { "label": "Computer Use", "summary": "Control approved desktop apps with a visible action overlay" },
           "cron": { "label": "Scheduled Tasks", "summary": "Run tasks automatically at specified times" },
           "dm": { "label": "Direct Message", "summary": "Send a one-on-one message to another agent" },
           "install_skill": { "label": "Install Skill", "summary": "Install new skills from GitHub or the skill library" },
           "update_settings": { "label": "Update Settings", "summary": "Allow the agent to modify application configuration" },
           "workflow": { "label": "Workflow", "summary": "Let the agent orchestrate multi-agent workflow scripts as background tasks" }
         }
-      },
-      "computerUse": {
-        "title": "Computer Use Status",
-        "description": "Shows the provider, OS permissions, and approved apps. The enable switch stays in Tools above.",
-        "provider": "Provider",
-        "availability": "Availability",
-        "available": "Available",
-        "unavailable": "Unavailable",
-        "permissions": "OS Permissions",
-        "permissionsEmpty": "No extra permissions or no status yet",
-        "approvals": "Approved Apps",
-        "approvalsEmpty": "None",
-        "refresh": "Refresh"
       }
     },
     "about": {
@@ -2446,6 +2431,8 @@
       "timezoneDesc": "IANA timezone (e.g. Asia/Shanghai)",
       "bridgeMediaPublicBaseUrl": "Bridge File Public URL",
       "bridgeMediaPublicBaseUrlDesc": "Public HTTP/HTTPS base URL used by external platforms to fetch local staged files. Usually provided by a reverse proxy or tunnel. Leave empty to fall back to HANA_BRIDGE_PUBLIC_BASE_URL.",
+      "computerUse": "Computer Use",
+      "computerUseDesc": "When enabled, new conversations expose the computer tool to the primary Agent. When disabled, new conversations cannot see it, and frozen old conversations are rejected if they call it.",
       "thinkingBudget": "Thinking Depth",
       "memory": "Memory System",
       "memoryDesc": "Enable/disable memory for current Agent",

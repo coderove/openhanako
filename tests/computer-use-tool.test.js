@@ -247,6 +247,18 @@ describe("computer tool", () => {
     expect(JSON.stringify(tool.parameters)).not.toMatch(/click_point|double_click|drag|fromX|from_x|toX|to_x/);
   });
 
+  it("returns disabled when a frozen session calls the tool after the global gate is closed", async () => {
+    const { tool, ctx } = makeTool(
+      { id: "gpt-5.5", provider: "openai", input: ["text", "image"] },
+      { enabled: false },
+    );
+
+    const result = await tool.execute("call-disabled", { action: "status" }, null, null, ctx);
+
+    expect(result.content[0].text).toContain("Computer Use is disabled for this agent");
+    expect(result.details.errorCode).toBe(COMPUTER_USE_ERRORS.DISABLED);
+  });
+
   it("creates a lease and reads app state", async () => {
     const { tool, ctx } = makeTool();
     const started = await tool.execute("call-1", {

@@ -683,7 +683,6 @@
       "models": "모델",
       "memory": "기억",
       "work": "워크스페이스",
-      "computer": "컴퓨터 사용",
       "skills": "스킬",
       "mcp": "Connectors",
       "bridge": "소셜",
@@ -844,26 +843,12 @@
           "automation": { "label": "자동화", "summary": "Agent가 알림과 플러그인 예약 동작을 만들 수 있게 합니다" },
           "beautify": { "label": "小花美术", "summary": "Agent가 문서 커버와 미적 보강을 생성할 수 있게 합니다" },
           "browser": { "label": "브라우저", "summary": "헤드리스 브라우저로 웹 페이지를 탐색" },
-          "computer": { "label": "Computer Use", "summary": "승인된 데스크톱 앱을 제어하고 실시간 동작 커서를 표시합니다" },
           "cron": { "label": "예약 작업", "summary": "지정한 시간에 작업을 자동 실행" },
           "dm": { "label": "다이렉트 메시지", "summary": "다른 에이전트에게 1대1 메시지 전송" },
           "install_skill": { "label": "스킬 설치", "summary": "GitHub 또는 스킬 라이브러리에서 새 스킬 설치" },
           "update_settings": { "label": "설정 변경", "summary": "Agent가 앱 설정을 수정할 수 있도록 허용" },
           "workflow": { "label": "Workflow", "summary": "Agent가 다중 에이전트 워크플로 스크립트를 백그라운드 작업으로 실행하도록 허용" }
         }
-      },
-      "computerUse": {
-        "title": "Computer Use 상태",
-        "description": "기반 provider, OS 권한, 승인된 앱을 표시합니다. 켜고 끄는 것은 위의 도구 스위치에서 합니다.",
-        "provider": "Provider",
-        "availability": "사용 가능 여부",
-        "available": "사용 가능",
-        "unavailable": "사용 불가",
-        "permissions": "OS 권한",
-        "permissionsEmpty": "추가 권한 없음 또는 아직 상태 없음",
-        "approvals": "승인된 앱",
-        "approvalsEmpty": "없음",
-        "refresh": "새로고침"
       }
     },
     "about": {
@@ -2396,6 +2381,8 @@
       "timezoneDesc": "IANA 시간대 (예: Asia/Shanghai)",
       "bridgeMediaPublicBaseUrl": "Bridge 파일 공개 URL",
       "bridgeMediaPublicBaseUrlDesc": "외부 플랫폼이 로컬 staged 파일을 가져갈 때 사용하는 공개 HTTP/HTTPS base URL이에요. 보통 리버스 프록시나 tunnel에서 제공해요. 비워두면 HANA_BRIDGE_PUBLIC_BASE_URL로 돌아가요.",
+      "computerUse": "Computer Use",
+      "computerUseDesc": "켜면 새 대화에서 주 에이전트에게 computer 도구를 노출합니다. 끄면 새 대화에는 보이지 않고, 이미 고정된 오래된 대화가 호출하면 거부됩니다.",
       "thinkingBudget": "사고 깊이",
       "memory": "메모리 시스템",
       "memoryDesc": "현재 Agent의 메모리 기능 켜기/끄기",

@@ -18,7 +18,6 @@ import { AgentTab } from './tabs/AgentTab';
 import { MeTab } from './tabs/MeTab';
 import { InterfaceTab } from './tabs/InterfaceTab';
 import { WorkTab } from './tabs/WorkTab';
-import { ComputerUseTab } from './tabs/ComputerUseTab';
 import { SkillsTab } from './tabs/SkillsTab';
 import { BridgeTab } from './tabs/BridgeTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
@@ -47,7 +46,6 @@ const TAB_COMPONENTS: Record<string, React.ComponentType> = {
   me: MeTab,
   interface: InterfaceTab,
   work: WorkTab,
-  computer: ComputerUseTab,
   skills: SkillsTab,
   bridge: BridgeTab,
   providers: ProvidersTab,
@@ -84,7 +82,6 @@ const TAB_TITLES: Record<string, string> = {
   me: '我',
   interface: '界面',
   work: '工作台',
-  computer: '使用电脑',
   workflow: 'Workflow',
   skills: '技能',
   bridge: '社交平台',
@@ -103,8 +100,8 @@ const TAB_DESCRIPTION_KEYS: Record<string, string> = {
   experiments: 'settings.experiments.description',
 };
 
-function normalizeNativeTabForPlatform(tab: string, platformName: string | null | undefined): string {
-  return platformName === 'linux' && tab === 'computer' ? 'agent' : tab;
+function normalizeSettingsTab(tab: string): string {
+  return tab === 'computer' ? 'experiments' : tab;
 }
 
 function titleToLabel(title: string | Record<string, string> | undefined): string {
@@ -127,8 +124,8 @@ export function SettingsContent({
   onActiveTabChange,
   listenToWindowTabSwitch = false,
 }: SettingsContentProps) {
-  const { activeTab, platformName, pluginSettingsTabs, ready } = useSettingsStore(
-    useShallow(s => ({ activeTab: s.activeTab, platformName: s.platformName, pluginSettingsTabs: s.pluginSettingsTabs, ready: s.ready }))
+  const { activeTab, pluginSettingsTabs, ready } = useSettingsStore(
+    useShallow(s => ({ activeTab: s.activeTab, pluginSettingsTabs: s.pluginSettingsTabs, ready: s.ready }))
   );
   const set = useSettingsStore(s => s.set);
   const lastReportedActiveTabRef = useRef<string | null>(null);
@@ -142,7 +139,7 @@ export function SettingsContent({
     const platform = window.platform;
     if (!platform?.onSwitchTab) return;
     const unsubscribe = platform.onSwitchTab((tab: string) => {
-      const nextTab = normalizeNativeTabForPlatform(tab, useSettingsStore.getState().platformName);
+      const nextTab = normalizeSettingsTab(tab);
       set({ activeTab: nextTab });
     });
     return typeof unsubscribe === 'function' ? unsubscribe : undefined;
@@ -159,13 +156,13 @@ export function SettingsContent({
   }, []);
 
   useEffect(() => {
-    const nextTab = normalizeNativeTabForPlatform(activeTab, platformName);
+    const nextTab = normalizeSettingsTab(activeTab);
     if (nextTab !== activeTab) {
       set({ activeTab: nextTab });
       lastReportedActiveTabRef.current = nextTab;
       onActiveTabChange?.(nextTab);
     }
-  }, [activeTab, platformName, set, onActiveTabChange]);
+  }, [activeTab, set, onActiveTabChange]);
 
   // Server 重启后用新端口重新加载数据
   useEffect(() => {
@@ -194,7 +191,7 @@ export function SettingsContent({
   }, []);
 
   const availablePluginSettingsTabs = pluginSettingsTabs || [];
-  const effectiveActiveTab = normalizeNativeTabForPlatform(activeTab, platformName);
+  const effectiveActiveTab = normalizeSettingsTab(activeTab);
   const dynamicTab = availablePluginSettingsTabs.find(tab => tab.id === effectiveActiveTab);
   const ActiveTab = TAB_COMPONENTS[effectiveActiveTab]
     || (dynamicTab ? getNativeSettingsTabComponent(dynamicTab.nativeComponent) : null)
@@ -206,10 +203,10 @@ export function SettingsContent({
   const isWideTab = effectiveActiveTab === 'plugin-marketplace' || effectiveActiveTab === 'providers';
 
   const reportActiveTabChange = useCallback((tab: string) => {
-    const nextTab = normalizeNativeTabForPlatform(tab, platformName);
+    const nextTab = normalizeSettingsTab(tab);
     lastReportedActiveTabRef.current = nextTab;
     onActiveTabChange?.(nextTab);
-  }, [onActiveTabChange, platformName]);
+  }, [onActiveTabChange]);
 
   useEffect(() => {
     if (lastReportedActiveTabRef.current === null) {

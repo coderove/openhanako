@@ -5,6 +5,7 @@ import { useSettingsStore } from '../store';
 import { renderMarkdown } from '../../utils/markdown';
 import { SettingsRow } from '../components/SettingsRow';
 import { SettingsSection } from '../components/SettingsSection';
+import { ComputerUseSection } from './ComputerUseSection';
 import styles from '../Settings.module.css';
 
 const CACHE_SNAPSHOT_EXPERIMENT_ID = 'memory.cache_snapshot_reflection';
@@ -250,9 +251,11 @@ function CacheSnapshotExperiment({ experiment, onValueChange }: {
 
 export function ExperimentsTab() {
   const showToast = useSettingsStore(s => s.showToast);
+  const platformName = useSettingsStore(s => s.platformName);
   const [experiments, setExperiments] = useState<ExperimentDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const memoryExperiments = experiments.filter((experiment) => experiment.owner === 'memory');
+  const showComputerUse = platformName !== 'linux';
 
   useEffect(() => {
     hanaFetch('/api/experiments')
@@ -278,6 +281,7 @@ export function ExperimentsTab() {
 
   return (
     <>
+      {showComputerUse && <ComputerUseSection />}
       <SettingsSection
         title={t('settings.experiments.memoryTitle')}
         description={t('settings.experiments.cacheSnapshot.description')}

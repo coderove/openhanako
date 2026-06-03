@@ -53,6 +53,12 @@ import {
 } from "../../shared/secret-custody.js";
 import { denySecretMutationWithoutScope, denyWithoutScope } from "../http/capability-guard.js";
 import { recordSecurityAuditEvent } from "../http/security-audit.js";
+
+function hideDisabledGlobalToolsForSettings(toolNames, engine) {
+  const computerUseEnabled = engine?.getComputerUseSettings?.()?.enabled === true;
+  if (computerUseEnabled) return toolNames;
+  return (toolNames || []).filter((name) => name !== "computer");
+}
 import { assertAgentConfigPatchYuan } from "../../core/yuan-registry.js";
 import { createModuleLogger } from "../../lib/debug-log.js";
 
@@ -424,12 +430,18 @@ export function createAgentsRoute(engine) {
         log.warn(
           `GET /agents/${id}/config: agent not found by keyed lookup despite passing agentExists check`
         );
-        config.availableTools = computeSettingsAvailableToolNames([], { pluginTools });
+        config.availableTools = hideDisabledGlobalToolsForSettings(
+          computeSettingsAvailableToolNames([], { pluginTools }),
+          engine,
+        );
       } else {
         const runtimeToolNames = (agent.tools || [])
           .map((t) => t.name)
           .filter(Boolean);
-        config.availableTools = computeSettingsAvailableToolNames(runtimeToolNames, { pluginTools });
+        config.availableTools = hideDisabledGlobalToolsForSettings(
+          computeSettingsAvailableToolNames(runtimeToolNames, { pluginTools }),
+          engine,
+        );
       }
 
       return c.json(maskObjectSecrets(config));

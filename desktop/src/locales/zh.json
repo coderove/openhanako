@@ -683,7 +683,6 @@
       "models": "模型",
       "memory": "记忆",
       "work": "工作台",
-      "computer": "使用电脑",
       "skills": "技能",
       "mcp": "连接器",
       "bridge": "社交平台",
@@ -885,26 +884,12 @@
           "automation": { "label": "自动化", "summary": "让 Agent 创建通知和插件定时动作" },
           "beautify": { "label": "小花美术", "summary": "让 Agent 为文档生成封面和审美增强内容" },
           "browser": { "label": "浏览器", "summary": "控制无头浏览器浏览网页" },
-          "computer": { "label": "电脑控制", "summary": "控制已批准的桌面应用，并显示实时动作光标" },
           "cron": { "label": "定时任务", "summary": "在指定时间自动执行任务" },
           "dm": { "label": "私信", "summary": "向其他 Agent 发送一对一消息" },
           "install_skill": { "label": "安装技能", "summary": "从 GitHub 或技能库安装新技能" },
           "update_settings": { "label": "修改设置", "summary": "让 Agent 修改应用配置项" },
           "workflow": { "label": "Workflow", "summary": "让 Agent 把多 Agent 编排脚本作为后台任务运行" }
         }
-      },
-      "computerUse": {
-        "title": "电脑控制状态",
-        "description": "这里展示底层 provider、系统权限和已批准应用。启停仍在上面的工具开关里完成。",
-        "provider": "Provider",
-        "availability": "可用性",
-        "available": "可用",
-        "unavailable": "不可用",
-        "permissions": "系统权限",
-        "permissionsEmpty": "无需额外权限或尚未返回",
-        "approvals": "已批准应用",
-        "approvalsEmpty": "暂无",
-        "refresh": "刷新"
       }
     },
     "about": {
@@ -2446,6 +2431,8 @@
       "timezoneDesc": "IANA 时区（如 Asia/Shanghai）",
       "bridgeMediaPublicBaseUrl": "Bridge 文件公网 URL",
       "bridgeMediaPublicBaseUrlDesc": "外部平台拉取本地 staged 文件时使用的公网 HTTP/HTTPS base URL，通常来自反向代理或 tunnel；留空则回退到 HANA_BRIDGE_PUBLIC_BASE_URL。",
+      "computerUse": "电脑控制",
+      "computerUseDesc": "开启后，新会话会向主助手暴露电脑控制工具；关闭后，新会话看不到该工具，已冻结的旧会话调用时会被拒绝。",
       "thinkingBudget": "思考深度",
       "memory": "记忆系统",
       "memoryDesc": "开启/关闭当前 Agent 的记忆功能",

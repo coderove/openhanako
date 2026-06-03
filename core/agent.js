@@ -678,7 +678,7 @@ export class Agent {
       ...this._pinnedMemoryTools,
     ] : [];
     const experienceTools = experienceEnabled ? this._experienceTools : [];
-    const computerUseTools = this._isComputerUseAvailableForThisAgent()
+    const computerUseTools = this._isComputerUseCandidateForThisAgent()
       ? [this._getComputerUseTool()]
       : [];
     const legacyArtifactTools = options.includeLegacyArtifactTool === true
@@ -728,18 +728,25 @@ export class Agent {
         getConfirmStore: () => this._cb?.getConfirmStore?.(),
         approveComputerUseApp: (approval) => this._cb?.getEngine?.()?.approveComputerUseApp?.(approval),
         emitEvent: (event, sp) => { if (sp) this._cb?.emitEvent?.(event, sp); },
+        isAgentToolEnabled: () => this._isComputerUseAvailableForThisAgent(),
+        isEnabledForAgentConfig: () => this._isComputerUseAvailableForThisAgent(),
       });
     }
     return this._computerUseTool;
   }
 
-  _isComputerUseAvailableForThisAgent() {
+  _isComputerUseCandidateForThisAgent() {
     const engine = this._cb?.getEngine?.();
     if (engine?.isComputerUseSupported?.() === false) return false;
-    const settings = engine?.getComputerUseSettings?.();
-    if (settings?.enabled !== true) return false;
     const primaryAgentId = engine?.getPrimaryAgentId?.() || null;
     return !primaryAgentId || primaryAgentId === this.id;
+  }
+
+  _isComputerUseAvailableForThisAgent() {
+    if (!this._isComputerUseCandidateForThisAgent()) return false;
+    const engine = this._cb?.getEngine?.();
+    const settings = engine?.getComputerUseSettings?.();
+    return settings?.enabled === true;
   }
 
   // Desk 系统访问
