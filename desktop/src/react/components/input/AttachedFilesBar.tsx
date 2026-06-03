@@ -109,6 +109,7 @@ function ImageAttachmentChip({
   const src = getMediaUrl(file);
   return (
     <span className={styles['media-attachment-chip']} title={file.name}>
+      <span className={styles['media-attachment-at']} aria-hidden="true">@</span>
       <span className={styles['image-attachment-preview']} aria-hidden="true">
         {src ? (
           <img src={src} alt="" />
@@ -135,6 +136,7 @@ function AudioAttachmentChip({
 }) {
   return (
     <span className={styles['media-attachment-chip']} title={file.name}>
+      <span className={styles['media-attachment-at']} aria-hidden="true">@</span>
       <button
         type="button"
         className={`${styles['audio-attachment-play']}${playing ? ` ${styles['is-playing']}` : ''}`}
@@ -152,6 +154,7 @@ function AudioAttachmentChip({
           />
         ))}
       </span>
+      <span className={styles['media-attachment-name']}>{file.name}</span>
       <RemoveButton name={file.name} onRemove={onRemove} />
     </span>
   );

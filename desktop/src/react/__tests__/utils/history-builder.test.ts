@@ -119,6 +119,27 @@ describe('buildItemsFromHistory user image restoration', () => {
     }]);
   });
 
+  it('把 attached_audio 标记恢复成音频附件，并从正文隐藏', () => {
+    const items = buildItemsFromHistory({
+      messages: [{
+        id: 'u1',
+        role: 'user',
+        content: '[attached_audio: /Users/test/.hanako/session-files/voice.wav]\n听一下',
+      }],
+    });
+
+    const first = items[0];
+    expect(first.type).toBe('message');
+    if (first.type !== 'message') throw new Error('expected message');
+    expect(first.data.text).toBe('听一下');
+    expect(first.data.textHtml).not.toContain('attached_audio');
+    expect(first.data.attachments).toEqual([{
+      path: '/Users/test/.hanako/session-files/voice.wav',
+      name: 'voice.wav',
+      isDir: false,
+    }]);
+  });
+
   it('丢弃字段残缺的历史 sideband block，保留同消息的可渲染内容', () => {
     const items = buildItemsFromHistory({
       messages: [{

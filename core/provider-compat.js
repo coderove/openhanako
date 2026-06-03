@@ -121,6 +121,73 @@ function stripOrphanToolMessages(payload) {
   return { ...payload, messages: repaired };
 }
 
+const ATTACHED_MEDIA_MARKER_RE = {
+  image: /\[attached_image:\s*[^\]]+\]\n?/g,
+  video: /\[attached_video:\s*[^\]]+\]\n?/g,
+  audio: /\[attached_audio:\s*[^\]]+\]\n?/g,
+};
+
+function stripNativeMediaAttachmentMarkers(payload) {
+  if (!Array.isArray(payload.messages)) return payload;
+
+  let changed = false;
+  const messages = payload.messages.map((message) => {
+    if (!Array.isArray(message?.content)) return message;
+    const mediaKinds = nativeMediaKindsInContent(message.content);
+    if (mediaKinds.size === 0) return message;
+
+    let contentChanged = false;
+    const content = message.content.map((part) => {
+      if (!part || typeof part !== "object" || part.type !== "text" || typeof part.text !== "string") {
+        return part;
+      }
+      const nextText = stripMediaMarkersFromText(part.text, mediaKinds);
+      if (nextText === part.text) return part;
+      contentChanged = true;
+      return { ...part, text: nextText };
+    });
+
+    if (!contentChanged) return message;
+    changed = true;
+    return { ...message, content };
+  });
+
+  return changed ? { ...payload, messages } : payload;
+}
+
+function nativeMediaKindsInContent(content) {
+  const kinds = new Set();
+  for (const part of content) {
+    const kind = nativeMediaKind(part);
+    if (kind) kinds.add(kind);
+  }
+  return kinds;
+}
+
+function nativeMediaKind(part) {
+  if (!part || typeof part !== "object") return null;
+  if (part.type === "input_audio") return "audio";
+  if (part.type === "input_image" || part.type === "image") return "image";
+  if (part.type === "video" || part.type === "video_url") return "video";
+
+  if (part.type !== "image_url") return null;
+  const url = part.image_url?.url ?? part.imageUrl?.url;
+  if (typeof url !== "string") return null;
+  const normalized = url.toLowerCase();
+  if (normalized.startsWith("data:image/")) return "image";
+  if (normalized.startsWith("data:audio/")) return "audio";
+  if (normalized.startsWith("data:video/")) return "video";
+  return null;
+}
+
+function stripMediaMarkersFromText(text, mediaKinds) {
+  let next = text;
+  for (const kind of mediaKinds) {
+    next = next.replace(ATTACHED_MEDIA_MARKER_RE[kind], "");
+  }
+  return next.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /**
  * Provider payload 兼容化的唯一入口。chat 路径与 utility 路径共享。
  *
@@ -146,6 +213,7 @@ export function normalizeProviderPayload(payload, model, options = {}) {
   // reasoning_content 校验）拿到的是已配对的 messages，不会被孤儿干扰。
   result = stripOrphanToolMessages(result);
   result = normalizeImplicitOutputBudget(result, model, options);
+  result = stripNativeMediaAttachmentMarkers(result);
 
   // 2. Provider-specific 补丁（按 matches 分发，first-match-wins）
   for (const mod of PROVIDER_MODULES) {

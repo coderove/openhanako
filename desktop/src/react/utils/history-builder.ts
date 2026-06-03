@@ -228,7 +228,7 @@ export function buildItemsFromHistory(data: HistoryApiResponse): ChatListItem[] 
         continue;
       }
 
-      const { text, files, attachedImages, attachedVideos, deskContext, quotedText } = parseUserAttachments(rawContent);
+      const { text, files, attachedImages, attachedVideos, attachedAudios, deskContext, quotedText } = parseUserAttachments(rawContent);
       const fileAtts = files.map(f => ({
         path: f.path,
         name: f.name,
@@ -256,7 +256,12 @@ export function buildItemsFromHistory(data: HistoryApiResponse): ChatListItem[] 
         name: ref.name,
         isDir: false,
       }));
-      const allAtts = [...fileAtts, ...markerImageAtts, ...markerVideoAtts, ...imageAtts];
+      const markerAudioAtts = attachedAudios.map((ref) => ({
+        path: ref.path,
+        name: ref.name,
+        isDir: false,
+      }));
+      const allAtts = [...fileAtts, ...markerImageAtts, ...markerVideoAtts, ...markerAudioAtts, ...imageAtts];
       const msg: ChatMessage = {
         id,
         sourceEntryId: m.entryId,

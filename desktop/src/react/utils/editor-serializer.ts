@@ -26,7 +26,6 @@ export function serializeEditor(json: JSONContent): { text: string; skills: stri
       const path = typeof node.attrs.path === 'string' ? node.attrs.path : '';
       if (name || path) {
         const label = name || path.split('/').pop() || path;
-        textParts.push(`@${label}`);
         fileRefs.push({
           ...(typeof node.attrs.fileId === 'string' && node.attrs.fileId ? { fileId: node.attrs.fileId } : {}),
           path,

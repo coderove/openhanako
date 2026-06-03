@@ -764,14 +764,14 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
     name: string;
     mimeType: string;
   }) => {
+    addAttachedFile({
+      fileId: file.fileId,
+      path: file.path,
+      name: file.name,
+      isDirectory: false,
+      mimeType: file.mimeType,
+    });
     if (!editor) {
-      addAttachedFile({
-        fileId: file.fileId,
-        path: file.path,
-        name: file.name,
-        isDirectory: false,
-        mimeType: file.mimeType,
-      });
       return;
     }
     editor.chain()

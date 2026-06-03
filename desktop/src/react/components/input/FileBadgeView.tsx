@@ -15,6 +15,7 @@ export function FileBadgeView({ node }: NodeViewProps) {
 
   return (
     <NodeViewWrapper as="span" className={styles.badge}>
+      <span className={styles.at} aria-hidden="true">@</span>
       {thumbnailUrl && (
         <img className={styles.thumbnail} src={thumbnailUrl} alt="" aria-hidden="true" />
       )}
@@ -26,7 +27,6 @@ export function FileBadgeView({ node }: NodeViewProps) {
           <span />
         </span>
       )}
-      <span className={styles.at} aria-hidden="true">@</span>
       <span className={styles.name}>{name}</span>
     </NodeViewWrapper>
   );

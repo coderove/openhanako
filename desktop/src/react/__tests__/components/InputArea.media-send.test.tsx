@@ -13,30 +13,30 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tiptap/react', () => ({
-  useEditor: () => ({
-    commands: {
-      focus: vi.fn(),
-      clearContent: mocks.clearContent,
-      scrollIntoView: vi.fn(),
-      setContent: vi.fn(),
-      insertContent: vi.fn(),
-    },
-    chain: () => ({
-      clearContent: () => ({
-        insertContent: () => ({
-          insertContent: () => ({
-            focus: () => ({ run: vi.fn() }),
-          }),
-        }),
-      }),
-    }),
-    getText: () => '',
-    getJSON: () => ({ type: 'doc', content: [] }),
-    state: { tr: { setMeta: vi.fn(() => ({})) } },
-    view: { dispatch: vi.fn() },
-    on: vi.fn(),
-    off: vi.fn(),
-  }),
+  useEditor: () => {
+    const chain: Record<string, unknown> = {};
+    chain.clearContent = vi.fn(() => chain);
+    chain.deleteRange = vi.fn(() => chain);
+    chain.insertContent = vi.fn(() => chain);
+    chain.focus = vi.fn(() => chain);
+    chain.run = vi.fn();
+    return {
+      commands: {
+        focus: vi.fn(),
+        clearContent: mocks.clearContent,
+        scrollIntoView: vi.fn(),
+        setContent: vi.fn(),
+        insertContent: vi.fn(),
+      },
+      chain: () => chain,
+      getText: () => '',
+      getJSON: () => ({ type: 'doc', content: [] }),
+      state: { tr: { setMeta: vi.fn(() => ({})) } },
+      view: { dispatch: vi.fn() },
+      on: vi.fn(),
+      off: vi.fn(),
+    };
+  },
   EditorContent: () => React.createElement('div', { 'data-testid': 'editor' }),
 }));
 
@@ -101,10 +101,33 @@ vi.mock('../../components/input/InputContextRow', () => ({
 }));
 
 vi.mock('../../components/input/InputControlBar', () => ({
-  InputControlBar: ({ canSend, onSend }: { canSend: boolean; onSend: () => void }) => React.createElement(
-    'button',
-    { type: 'button', 'data-testid': 'send', disabled: !canSend, onClick: onSend },
-    'send',
+  InputControlBar: ({
+    canSend,
+    onSend,
+    showAudioInput,
+    onAudioToggle,
+    audioRecordingActive,
+  }: {
+    canSend: boolean;
+    onSend: () => void;
+    showAudioInput?: boolean;
+    onAudioToggle?: () => void;
+    audioRecordingActive?: boolean;
+  }) => React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
+      'button',
+      { type: 'button', 'data-testid': 'send', disabled: !canSend, onClick: onSend },
+      'send',
+    ),
+    showAudioInput
+      ? React.createElement(
+        'button',
+        { type: 'button', 'data-testid': 'record-audio', onClick: onAudioToggle },
+        audioRecordingActive ? 'stop' : 'record',
+      )
+      : null,
   ),
 }));
 
@@ -170,6 +193,7 @@ function seedSession() {
 describe('InputArea media send', () => {
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   beforeEach(() => {
@@ -293,6 +317,99 @@ describe('InputArea media send', () => {
       name: 'voice.wav',
       mimeType: 'audio/wav',
     });
+  });
+
+  it('registers recorded audio as an attached file after saving the recording', async () => {
+    type MockAudioProcessor = {
+      onaudioprocess: ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void) | null;
+      connect: ReturnType<typeof vi.fn>;
+      disconnect: ReturnType<typeof vi.fn>;
+    };
+    let processor: MockAudioProcessor | null = null;
+    const stopTrack = vi.fn();
+    const stream = {
+      getTracks: vi.fn(() => [{ stop: stopTrack }]),
+    };
+    class AudioContextMock {
+      sampleRate = 24000;
+      state = 'running';
+      destination = {};
+      createMediaStreamSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
+      createScriptProcessor = vi.fn(() => {
+        processor = {
+          onaudioprocess: null,
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+        };
+        return processor;
+      });
+      createGain = vi.fn(() => ({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }));
+      close = vi.fn(async () => {});
+    }
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(async () => stream) },
+    });
+    vi.stubGlobal('AudioContext', AudioContextMock);
+    mocks.hanaFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/upload-blob') {
+        return new Response(JSON.stringify({
+          uploads: [{
+            fileId: 'sf_recording',
+            dest: '/tmp/hana/session-files/recording.wav',
+            name: '录音 1.wav',
+          }],
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch path ${path}`);
+    });
+    useStore.setState({
+      attachedFiles: [],
+      attachedFilesBySession: { '/session/media.jsonl': [] },
+      models: [{
+        id: 'mimo-v2.5',
+        provider: 'mimo',
+        name: 'MiMo V2.5',
+        api: 'openai-completions',
+        baseUrl: 'https://api.xiaomimimo.com/v1',
+        audio: true,
+        audioTransport: 'mimo-input-audio',
+        audioTransportSupported: true,
+        input: ['text'],
+        isCurrent: true,
+      }],
+    } as never);
+
+    render(React.createElement(InputArea));
+
+    fireEvent.click(screen.getByTestId('record-audio'));
+
+    await waitFor(() => {
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+      expect(processor).not.toBeNull();
+      expect(screen.getByTestId('record-audio').textContent).toBe('stop');
+    });
+    const activeProcessor = processor as unknown as MockAudioProcessor;
+    activeProcessor.onaudioprocess?.({
+      inputBuffer: {
+        getChannelData: () => new Float32Array([0.12, -0.12, 0.08, -0.08]),
+      },
+    });
+
+    fireEvent.click(screen.getByTestId('record-audio'));
+
+    await waitFor(() => {
+      expect(mocks.hanaFetch).toHaveBeenCalledWith('/api/upload-blob', expect.objectContaining({
+        method: 'POST',
+      }));
+      expect(useStore.getState().attachedFiles[0]).toMatchObject({
+        fileId: 'sf_recording',
+        path: '/tmp/hana/session-files/recording.wav',
+        name: '录音 1.wav',
+        mimeType: 'audio/wav',
+      });
+    });
+    expect(stopTrack).toHaveBeenCalled();
   });
 
   it('keeps audio attachments on the legacy text path for unsupported models', async () => {

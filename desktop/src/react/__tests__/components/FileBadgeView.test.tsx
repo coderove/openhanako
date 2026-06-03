@@ -42,6 +42,9 @@ describe('FileBadgeView', () => {
     const image = container.querySelector('img');
     expect(image).not.toBeNull();
     expect(image).toHaveAttribute('src', 'file:///tmp/photo.png');
+    const children = Array.from(container.firstElementChild?.children || []);
+    expect(children[0]).toHaveTextContent('@');
+    expect(children[1]).toBe(image);
     expect(window.platform.getFileUrl).toHaveBeenCalledWith('/tmp/photo.png');
   });
 
@@ -76,6 +79,9 @@ describe('FileBadgeView', () => {
     expect(screen.getByText('@')).toBeInTheDocument();
     expect(screen.getByText('recording.wav')).toBeInTheDocument();
     expect(screen.getByTestId('file-badge-audio-wave')).toBeInTheDocument();
+    const children = Array.from(container.firstElementChild?.children || []);
+    expect(children[0]).toHaveTextContent('@');
+    expect(children[1]).toBe(screen.getByTestId('file-badge-audio-wave'));
     expect(container.querySelector('img')).toBeNull();
     expect(window.platform.getFileUrl).not.toHaveBeenCalled();
   });
