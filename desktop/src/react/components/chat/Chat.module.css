@@ -290,7 +290,8 @@
 /* ── Message action buttons (shared by user & assistant) ── */
 
 .msgActions {
-    --msg-actions-popover-width: 86px;
+    --msg-actions-gap: 6px;
+    --msg-actions-hotspot-width: 78px;
     position: absolute;
     bottom: 4px;
     right: 4px;
@@ -301,9 +302,24 @@
     z-index: 2;
 }
 
+.msgActions::before {
+    content: "";
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    right: 100%;
+    width: calc(var(--msg-actions-hotspot-width) + var(--msg-actions-gap));
+    pointer-events: auto;
+}
+
 .msgActionsLeft {
     left: 4px;
     right: auto;
+}
+
+.msgActionsLeft::before {
+    right: auto;
+    left: 100%;
 }
 
 .msgActionsVisible { opacity: 1 !important; }
@@ -315,13 +331,13 @@
 .msgActionsPopover {
     position: absolute;
     top: 50%;
-    right: 100%;
+    right: calc(100% + var(--msg-actions-gap));
     transform: translateY(-50%);
     display: flex;
     gap: 2px;
     box-sizing: border-box;
     width: max-content;
-    min-width: var(--msg-actions-popover-width);
+    min-width: 0;
     background: var(--bg-card, #fff);
     border: 1px solid var(--overlay-light, rgba(0, 0, 0, 0.08));
     border-radius: 6px;
@@ -332,21 +348,14 @@
     transition: opacity var(--duration-fast);
 }
 
-.messageGroupAssistant:hover .msgActionsPopover,
-.messageGroupUser:hover .msgActionsPopover,
 .msgActions:hover .msgActionsPopover {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.msgActions:focus-within .msgActionsPopover {
     opacity: 1;
     pointer-events: auto;
 }
 
 .msgActionsLeft .msgActionsPopover {
     right: auto;
-    left: 100%;
+    left: calc(100% + var(--msg-actions-gap));
 }
 
 .msgActionBtn {

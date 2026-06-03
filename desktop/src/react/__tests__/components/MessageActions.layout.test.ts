@@ -19,19 +19,32 @@ describe('MessageActions layout', () => {
     expect(block).not.toMatch(/top:\s*4px/);
   });
 
-  it('shows the full action card as an opaque card surface when the message is hovered', () => {
+  it('shows only the checkbox on message hover and keeps the action card scoped to its own hotspot', () => {
     const css = readChatCss();
     const actionsBlock = css.match(/\.msgActions\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+    const hotspotBlock = css.match(/\.msgActions::before\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
     const actionsHoverRule = css.match(/\.messageGroupAssistant:hover \.msgActions,\s*\.messageGroupUser:hover \.msgActions\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
-    const popoverHoverRule = css.match(/\.messageGroupAssistant:hover \.msgActionsPopover,\s*\.messageGroupUser:hover \.msgActionsPopover,\s*\.msgActions:hover \.msgActionsPopover\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
+    const popoverHoverRule = css.match(/\.msgActions:hover \.msgActionsPopover\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
     const popoverBlock = css.match(/\.msgActionsPopover\s*\{(?<body>[^}]*)\}/)?.groups?.body || '';
 
-    expect(actionsBlock).toMatch(/--msg-actions-popover-width:\s*86px/);
+    expect(actionsBlock).toMatch(/--msg-actions-gap:\s*6px/);
+    expect(actionsBlock).toMatch(/--msg-actions-hotspot-width:\s*78px/);
+    expect(hotspotBlock).toMatch(/right:\s*100%/);
+    expect(hotspotBlock).toMatch(/width:\s*calc\(var\(--msg-actions-hotspot-width\)\s*\+\s*var\(--msg-actions-gap\)\)/);
+    expect(hotspotBlock).toMatch(/pointer-events:\s*auto/);
     expect(actionsHoverRule).toMatch(/opacity:\s*1/);
     expect(popoverHoverRule).toMatch(/opacity:\s*1/);
     expect(popoverHoverRule).toMatch(/pointer-events:\s*auto/);
-    expect(popoverBlock).toMatch(/min-width:\s*var\(--msg-actions-popover-width\)/);
+    expect(popoverBlock).toMatch(/right:\s*calc\(100%\s*\+\s*var\(--msg-actions-gap\)\)/);
+    expect(popoverBlock).toMatch(/width:\s*max-content/);
+    expect(popoverBlock).toMatch(/min-width:\s*0/);
+    expect(popoverBlock).toMatch(/pointer-events:\s*none/);
     expect(popoverBlock).toMatch(/background:\s*var\(--bg-card,\s*#fff\)/);
+    expect(css).not.toMatch(/messageGroupAssistant:hover \.msgActionsPopover/);
+    expect(css).not.toMatch(/messageGroupUser:hover \.msgActionsPopover/);
+    expect(css).not.toMatch(/\.msgActions:focus-within \.msgActionsPopover/);
+    expect(css).not.toMatch(/\.msgActionsPopover:hover/);
+    expect(css).not.toMatch(/--msg-actions-popover-width/);
   });
 
   it('keeps active message action styling when the button is hovered', () => {
