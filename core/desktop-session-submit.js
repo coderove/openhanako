@@ -128,6 +128,11 @@ export async function submitDesktopSessionMessage(engine, opts = {}) {
         bridgeSessionKey: displayMessage?.bridgeSessionKey || null,
       },
     }, sessionPath);
+    queueVoiceInputTranscriptions({
+      speechRecognition: engine.speechRecognition,
+      sessionPath,
+      attachments: displayAttachments,
+    });
 
     promptText = addAttachedImageMarkers(promptText, promptImageAttachmentPaths);
     promptText = addAttachedVideoMarkers(promptText, promptVideoAttachmentPaths);
@@ -182,6 +187,17 @@ export async function submitDesktopSessionMessage(engine, opts = {}) {
   }
 }
 
+function queueVoiceInputTranscriptions({ speechRecognition, sessionPath, attachments }) {
+  if (!speechRecognition || typeof speechRecognition.queueVoiceTranscription !== "function") return;
+  for (const attachment of attachments || []) {
+    if (attachment?.presentation !== "voice-input" || !attachment.fileId) continue;
+    speechRecognition.queueVoiceTranscription({
+      sessionPath,
+      fileId: attachment.fileId,
+    });
+  }
+}
+
 function registerDisplayAttachments({ hanakoHome, sessionPath, attachments, registerSessionFile }) {
   const nextAttachments = [];
   const imageAttachmentPaths = [];
@@ -201,6 +217,7 @@ function registerDisplayAttachments({ hanakoHome, sessionPath, attachments, regi
         storageKind: displayAttachmentStorageKind(hanakoHome, next.path),
         presentation: displayAttachmentPresentation(next),
         listed: listedForDisplayAttachment(next),
+        waveform: next.waveform,
       }));
       if (sessionFile) {
         next = {
@@ -213,6 +230,7 @@ function registerDisplayAttachments({ hanakoHome, sessionPath, attachments, regi
           listed: sessionFile.listed !== undefined ? sessionFile.listed !== false : listedForDisplayAttachment(next),
           status: sessionFile.status,
           missingAt: sessionFile.missingAt,
+          waveform: sessionFile.waveform || next.waveform,
         };
       }
     }

@@ -45,6 +45,10 @@ import { createWorkflowTool } from "../lib/tools/workflow-tool.js";
 import { runCompatChecks } from "../lib/compat/index.js";
 import { getPlatformPromptNote } from "./platform-prompt.js";
 import { assertAgentConfigPatchYuan, getAgentConfigRepairState } from "./yuan-registry.js";
+import {
+  collectWorkspaceInstructionFiles,
+  formatWorkspaceInstructionFiles,
+} from "./workspace-instruction-files.js";
 import { createModuleLogger } from "../lib/debug-log.js";
 import {
   CACHE_SNAPSHOT_EXPERIMENT_ID,
@@ -417,6 +421,7 @@ export class Agent {
     this._sessionFoldersTool = createSessionFoldersTool({
       getEngine: () => this._cb?.getEngine?.(),
       getConfirmStore: () => this._cb?.getConfirmStore?.(),
+      getApprovalGateway: () => this._cb?.getApprovalGateway?.(),
       getSessionPath: () => this._cb?.getCurrentSessionPath?.(),
       emitEvent: (event, sp) => { if (sp) this._cb?.emitEvent?.(event, sp); },
     });
@@ -739,6 +744,8 @@ export class Agent {
         },
         getAgentId: () => this.id,
         getConfirmStore: () => this._cb?.getConfirmStore?.(),
+        getApprovalGateway: () => this._cb?.getApprovalGateway?.(),
+        getPermissionMode: (sessionPath) => this._cb?.getSessionPermissionMode?.(sessionPath),
         approveComputerUseApp: (approval) => this._cb?.getEngine?.()?.approveComputerUseApp?.(approval),
         emitEvent: (event, sp) => { if (sp) this._cb?.emitEvent?.(event, sp); },
         isAgentToolEnabled: () => this._isComputerUseAvailableForThisAgent(),
@@ -1026,7 +1033,7 @@ export class Agent {
     // cache 命中率（KV cache / Anthropic prompt cache 都按严格前缀匹配）。
     // 顺序：平台 → 环境 → 行为指南（任务/经验/工具/安全/网页/设置/技能/团队）
     //      ── cache 分界线 ──
-    //      用户档案 → ishiki（依赖 userName）→ 工作台 → 记忆规则/置顶/记忆 → 当前时间
+    //      用户档案 → ishiki（依赖 userName）→ 工作台 → 工作区说明文件 → 记忆规则/置顶/记忆 → 当前时间
     //
     // ishiki 放在用户档案之后：模板里有「你和{userName}是认识很久的人」这类引用，
     // 叙事顺序上先告诉模型"用户是谁"，再告诉它"你是谁、你和用户什么关系"。
@@ -1260,6 +1267,17 @@ export class Agent {
         `\nFiles and directories mentioned by the user should be searched in the current working directory first.`
     );
 
+    const workspaceInstructionBlock = formatWorkspaceInstructionFiles(
+      collectWorkspaceInstructionFiles({
+        cwd: cwdPath,
+        workspaceContext: this._config?.workspace_context,
+      }),
+      { locale: this._config.locale || "" },
+    );
+    if (workspaceInstructionBlock) {
+      parts.push(workspaceInstructionBlock);
+    }
+
     parts.push(isZh
       ? "\n## 文件与命令工具使用\n\n" +
         "查看文件和目录时优先用 read/grep/find/ls。\n" +
@@ -1282,13 +1300,14 @@ export class Agent {
     const fmtOpts = {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
       hour: "2-digit", minute: "2-digit", timeZoneName: "short",
+      hourCycle: "h23",
       ...(tz ? { timeZone: tz } : {}),
     };
-    const dateTime = now.toLocaleString("en-US", fmtOpts);
+    const dateTime = new Intl.DateTimeFormat("en-US", fmtOpts).format(now);
     parts.push(`\nCurrent date and time: ${dateTime}`);
     parts.push(isZh
-      ? "你的一天从凌晨 4:00 开始。4:00 之前的对话属于前一天。"
-      : "Your day starts at 4:00 AM. Conversations before 4:00 AM belong to the previous day.");
+      ? "你的一天从 04:00 开始。04:00 之前的对话属于前一天。"
+      : "Your day starts at 04:00. Conversations before 04:00 belong to the previous day.");
 
     return parts.join("\n");
   }

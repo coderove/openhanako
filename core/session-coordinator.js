@@ -1550,9 +1550,11 @@ export class SessionCoordinator {
     assertVideoInputSupported(this._session.model, opts?.videos);
     assertAudioInputSupported(this._session.model, opts?.audios);
     const promptOpts = buildPromptMediaOptions(opts);
+    const nativeMediaTurn = engine?.beginCurrentTurnNativeMedia?.(sp, opts);
     try {
       await this._session.prompt(text, promptOpts);
     } finally {
+      engine?.endCurrentTurnNativeMedia?.(nativeMediaTurn);
       pruneSessionInlineMediaHistory(this._session);
       if (sp) this._scheduleRuntimePressureCheck(sp, "prompt");
     }
@@ -1635,9 +1637,11 @@ export class SessionCoordinator {
     assertVideoInputSupported(entry.session.model, opts?.videos);
     assertAudioInputSupported(entry.session.model, opts?.audios);
     const promptOpts = buildPromptMediaOptions(opts);
+    const nativeMediaTurn = engine?.beginCurrentTurnNativeMedia?.(sessionPath, opts);
     try {
       await entry.session.prompt(text, promptOpts);
     } finally {
+      engine?.endCurrentTurnNativeMedia?.(nativeMediaTurn);
       pruneSessionInlineMediaHistory(entry.session);
       this._scheduleRuntimePressureCheck(sessionPath, "prompt_session");
     }
@@ -2042,10 +2046,12 @@ export class SessionCoordinator {
     const accessMode = legacyAccessModeFromPermissionMode(normalized);
     this._d.emitEvent({ type: "permission_mode", mode: normalized, readOnly }, sessionPath);
     this._d.emitEvent({ type: "access_mode", mode: accessMode, permissionMode: normalized, readOnly }, sessionPath);
-    this._d.emitEvent({ type: "plan_mode", enabled: readOnly }, sessionPath);
+    this._d.emitEvent({ type: "plan_mode", enabled: readOnly, mode: normalized }, sessionPath);
     const label = normalized === SESSION_PERMISSION_MODES.READ_ONLY
       ? "只读"
-      : (normalized === SESSION_PERMISSION_MODES.ASK ? "先问" : "操作");
+      : (normalized === SESSION_PERMISSION_MODES.ASK
+        ? "先问"
+        : (normalized === SESSION_PERMISSION_MODES.AUTO ? "自动审核" : "操作"));
     this._d.emitDevLog(`Permission Mode: ${label}`, "info");
   }
 
