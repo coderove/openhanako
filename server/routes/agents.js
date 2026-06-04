@@ -171,6 +171,13 @@ function emitAgentConfigAppEvents(engine, agentId, { globalFields, agentPartial,
     });
   }
 
+  const keepAwake = getGlobalValue(globalFields, "keep_awake");
+  if (keepAwake !== undefined) {
+    emitAppEvent(engine, "keep-awake-changed", {
+      keep_awake: typeof engine.getKeepAwake === "function" ? engine.getKeepAwake() : keepAwake === true,
+    });
+  }
+
   if (hasOwn(agentPartial, "skills")) {
     emitAppEvent(engine, "skills-changed", { agentId });
   }
@@ -188,6 +195,10 @@ export function createAgentsRoute(engine) {
   route.get("/agents", async (c) => {
     try {
       await engine.gcWorkspacePersistence?.();
+      const fresh = c.req.query("fresh");
+      if (fresh === "1" || fresh === "true") {
+        engine.invalidateAgentListCache?.();
+      }
       return c.json({ agents: engine.listAgents() });
     } catch (err) {
       return c.json({ error: err.message }, 500);

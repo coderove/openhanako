@@ -337,8 +337,15 @@ export class HanaEngine {
       getUsageLedger: () => this._usageLedger,
     });
     this._notifications = new NotificationService({
-      emitDesktop: ({ title, body, agentId }) => {
-        this._hubCallbacks?.eventBus?.emit({ type: "notification", title, body, agentId: agentId || null }, null);
+      emitDesktop: ({ title, body, agentId, desktopFocusPolicy, sessionPath }) => {
+        this._hubCallbacks?.eventBus?.emit({
+          type: "notification",
+          title,
+          body,
+          agentId: agentId || null,
+          desktopFocusPolicy,
+          ...(sessionPath ? { sessionPath } : {}),
+        }, sessionPath || null);
       },
       getBridgeManager: () => this._hubCallbacks?.hub?.bridgeManager || null,
     });
@@ -655,6 +662,9 @@ export class HanaEngine {
 
   async createSession(mgr, cwd, mem, model, opts = {}) {
     return this._sessionCoord.createSession(mgr, cwd, mem, model, opts);
+  }
+  async createDetachedSession(opts = {}) {
+    return this._sessionCoord.createDetachedSession(opts);
   }
   buildSessionCacheSnapshot(p, opts) {
     return this._sessionCoord.buildSessionCacheSnapshot(p, opts);
@@ -1011,6 +1021,10 @@ export class HanaEngine {
   setEditor(p) { return this._prefs.setEditor(p); }
   getAppearance() { return this._prefs.getAppearance(); }
   setAppearance(p) { return this._prefs.setAppearance(p); }
+  getNotificationPreferences() { return this._prefs.getNotificationPreferences(); }
+  setNotificationPreferences(p) { return this._prefs.setNotificationPreferences(p); }
+  getQuickChatPreferences() { return this._prefs.getQuickChatPreferences(); }
+  setQuickChatPreferences(p) { return this._prefs.setQuickChatPreferences(p); }
   getWorkspaceUiState(workspaceRoot, surface) { return this._prefs.getWorkspaceUiState(workspaceRoot, surface); }
   setWorkspaceUiState(workspaceRoot, surface, state) { return this._prefs.setWorkspaceUiState(workspaceRoot, surface, state); }
   gcWorkspacePersistence(options = {}) {
@@ -1034,13 +1048,15 @@ export class HanaEngine {
   setUpdateChannel(ch) { this._prefs.setUpdateChannel(ch); }
   getAutoCheckUpdates() { return this._prefs.getAutoCheckUpdates(); }
   setAutoCheckUpdates(v) { this._prefs.setAutoCheckUpdates(v); }
+  getKeepAwake() { return this._prefs.getKeepAwake(); }
+  setKeepAwake(v) { this._prefs.setKeepAwake(v); }
   setMemoryEnabled(v) { return this._configCoord.setMemoryEnabled(v); }
   setMemoryMasterEnabled(id, v) { return this._configCoord.setMemoryMasterEnabled(id, v); }
   persistSessionMeta() { return this._configCoord.persistSessionMeta(); }
   get permissionMode() { return this._sessionCoord.getPermissionMode(); }
   getSessionPermissionMode(sessionPath) { return this._sessionCoord.getPermissionMode(sessionPath); }
   setSessionPermissionMode(mode) { return this._sessionCoord.setPermissionMode(mode); }
-  setSessionPermissionModeForSession(sessionPath, mode) { return this._sessionCoord.setSessionPermissionMode(sessionPath, mode); }
+  setSessionPermissionModeForSession(sessionPath, mode, options) { return this._sessionCoord.setSessionPermissionMode(sessionPath, mode, options); }
   setCurrentSessionPermissionMode(mode) { return this._sessionCoord.setCurrentSessionPermissionMode(mode); }
   setPendingSessionPermissionMode(mode) { return this._sessionCoord.setPendingPermissionMode(mode); }
   getSessionPermissionModeDefault() { return this._sessionCoord.getPermissionModeDefault(); }

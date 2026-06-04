@@ -13,6 +13,16 @@
   "selection": {
     "quoteToChat": "Quote to chat"
   },
+  "quickChat": {
+    "title": "Quick Chat",
+    "close": "Close Quick Chat",
+    "openFullSession": "Open full chat",
+    "waitingReply": "Waiting for reply...",
+    "attachImage": "Add image",
+    "serviceUnavailable": "Could not connect to Hana service",
+    "createSessionFailed": "Failed to create chat",
+    "sendFailed": "Send failed"
+  },
   "channel": {
     "tab": "Channels",
     "chatTab": "Chat",
@@ -692,6 +702,7 @@
     "autoSaved": "Auto-saved ✿",
     "tabs": {
       "interface": "Interface",
+      "general": "General",
       "agent": "Agent",
       "me": "Me",
       "providers": "Providers",
@@ -711,11 +722,14 @@
     },
     "experiments": {
       "title": "Experiments",
+      "compactionTitle": "Context Compaction",
+      "compactionSectionDescription": "Choose whether compact prioritizes prompt-cache preservation or broad history compatibility.",
       "memoryTitle": "Cache Memory",
       "description": "Forward-looking features land here first. Once stable, they move to the settings page where they belong.",
       "empty": "No visible experiments",
       "owner": {
-        "memory": "Memory"
+        "memory": "Memory",
+        "session": "Session"
       },
       "status": {
         "alpha": "Alpha",
@@ -747,6 +761,13 @@
         "summaryTitle": "Rolling Summary Preview",
         "emptyPreview": "No observation yet",
         "clearObservation": "Clear observation"
+      },
+      "compaction": {
+        "title": "Compaction mode",
+        "description": "Auto prefers cache-preserving compaction. Normal compaction lets Pi SDK run its native summarizer, which is better for unstable history formats.",
+        "auto": "Auto",
+        "cachePreserving": "Cache-preserving compaction",
+        "piCompatible": "Normal compaction"
       }
     },
     "appearance": {
@@ -911,6 +932,32 @@
         }
       }
     },
+    "general": {
+      "title": "General",
+      "startup": {
+        "title": "Startup & Background"
+      },
+      "launchAtLogin": "Launch at login",
+      "keepAwake": "Keep running while locked",
+      "quickChat": {
+        "title": "Quick Chat",
+        "shortcut": "Open shortcut",
+        "shortcutHint": "Click and press a new key combo. Esc cancels recording.",
+        "reuseTimeout": "Keep old input for",
+        "reuseTimeoutHint": "After the mini window stays hidden this long, the shortcut opens a fresh input.",
+        "minutes": "min",
+        "recording": "Press shortcut...",
+        "restoreDefault": "Restore default",
+        "registrationFailed": "Shortcut is already in use"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "turnCompletion": "Turn completion notification",
+        "turnCompletionNever": "Never",
+        "turnCompletionWhenUnfocused": "When HanaAgent is unfocused",
+        "turnCompletionWhenSessionUnfocused": "When not focused on the completed Session"
+      }
+    },
     "about": {
       "title": "About Them",
       "tagline": "An assistant that lives in your computer, with a good memory.",
@@ -933,6 +980,7 @@
       "updateNeedInstall": "Please move HanaAgent to the Applications folder first",
       "updateDiskSpace": "Not enough disk space to download update",
       "launchAtLogin": "Launch at login",
+      "keepAwake": "Keep running while locked",
       "betaUpdates": "Receive beta updates",
       "autoCheckUpdates": "Check for updates automatically"
     },
@@ -1975,6 +2023,9 @@
     "resetContext": "Reset context",
     "resetContextTip": "Next message will start a new conversation"
   },
+  "notification": {
+    "turnCompletionBody": "This turn is complete"
+  },
   "error": {
     "pathsRequired": "paths array is required",
     "tooManyFiles": "Too many files (max {max}, got {n})",
@@ -2483,6 +2534,55 @@
       "label": "Stop background task",
       "description": "Stop a running background task. Pass the task_id to terminate it. Supported task types include sub-agent tasks, image/video generation tasks, etc.",
       "taskIdDesc": "The task ID to stop"
+    },
+    "automation": {
+      "label": "Automation",
+      "description": "Create and manage scheduled deterministic automation jobs such as notifications and plugin actions. Use cron for Agent-session prompt jobs.",
+      "actionDesc": "Action to perform.",
+      "scheduleTypeDesc": "Trigger type for add actions.",
+      "scheduleDesc": "Trigger schedule. For every, use minutes. For cron, use a 5-field cron expression.",
+      "labelDesc": "Short display label.",
+      "titleDesc": "Notification title.",
+      "bodyDesc": "Notification body.",
+      "pluginIdDesc": "Plugin id for plugin actions.",
+      "actionIdDesc": "Plugin action id. V0 maps this to the plugin tool name.",
+      "paramsDesc": "Plugin action parameters.",
+      "idDesc": "Automation job id for remove/toggle."
+    },
+    "terminal": {
+      "label": "Terminal",
+      "description": "Manage per-session persistent terminal sessions. Use the existing bash tool for short one-shot commands. Use terminal only for long-running or interactive processes that need continued stdin/stdout, such as dev servers, REPLs, ssh, or shells. Actions: start, write, read, close, list.",
+      "actionDesc": "One of: start, write, read, close, list.",
+      "terminalIdDesc": "Terminal id returned by action=start or action=list.",
+      "commandDesc": "Command to start in a PTY. Omit to start an interactive shell.",
+      "charsDesc": "Input to write to the terminal for action=write.",
+      "cwdDesc": "Working directory for action=start. Defaults to the current session cwd.",
+      "labelDesc": "Short human label for action=start.",
+      "sinceSeqDesc": "Only return transcript chunks after this sequence number for action=read.",
+      "colsDesc": "PTY columns for action=start.",
+      "rowsDesc": "PTY rows for action=start."
+    },
+    "computer": {
+      "label": "Computer Use",
+      "description": "Inspect and control an approved desktop app or window through Hana Computer Use."
+    },
+    "checkPendingTasks": {
+      "label": "Check Pending Tasks",
+      "description": "Check the status of all background async tasks in the current conversation (image/video generation, subagent, etc.). Only returns tasks from the current conversation.",
+      "statusDesc": "Filter by status: pending / resolved / failed. Omit to return all."
+    },
+    "sessionFolders": {
+      "label": "Session Folders",
+      "description": "List or request changes to the current session's extra authorized sandbox folders. Use action=list to inspect cwd, prompt-visible workspace folders, user-authorized folders, and effective sandbox roots. Use add/remove only after the user wants this session to gain or drop folder access; changes require user confirmation and do not modify CWD or prompt text.",
+      "actionDesc": "list returns the current folder scope. add/remove asks the user to confirm changing the current session's extra authorized folders.",
+      "folderDesc": "Absolute or resolvable folder path for add/remove."
+    },
+    "workflow": {
+      "label": "Workflow",
+      "description": "Orchestrate multiple sub-agents with a deterministic JS script (agent/parallel/pipeline/workflow).\nUse for: controlled fan-out, ensuring thoroughness, synthesizing results from multiple sub-agents.\nScript must start with `export const meta = { name, description }` (pure literal).\nAvailable globals: agent(prompt, {model?, schema?, agentType?}) returns result synchronously (with schema returns validated object); parallel(thunks) runs concurrently and awaits all (throwing thunks resolve to null); pipeline(items, ...stages) runs each item through stages independently; workflow(script, args?) runs another workflow inline (shares limiter/signal/budget, one level only); log/phase/budget/args.\nbudget: { total: number|null, spent(): number, remaining(): number }. total comes from args.budgetTokens; spent() queries UsageLedger in real-time; remaining() = total - spent() or Infinity if no total. Use for dynamic loops: `while (budget.remaining() > 50000) { ... }`.\nScript body (two equivalent forms): 1. use globals at top level, top-level return for result; 2. `export default async function({ agent, parallel, pipeline, workflow, log, phase, budget, args }) { ... }` destructure params, return inside function.\nScript cannot access require/process/fs/net; Math.random/Date.now are disabled.\nTool returns task id (= runId) immediately and runs in the background (non-blocking), script return value becomes the background task's final result, automatically returns to conversation when done.\nResume: pass resumeFromRunId with a previous runId to resume from checkpoint — completed agent() calls with unchanged (prompt, opts) return cached results instantly; first changed call and everything after re-executes.\nWorkflow agent nodes are controlled one-shot threads, allowing high concurrency fan-out (up to 256 concurrent, 1000 total dispatched).",
+      "scriptDesc": "Orchestration script, must start with export const meta = {...}",
+      "argsDesc": "Arguments passed to the script's args global. Pass { budgetTokens: N } to set a token budget ceiling.",
+      "resumeFromRunIdDesc": "Previous workflow runId (taskId) to resume from — cached agent nodes with unchanged prompt+opts return instantly, first change onward re-executes."
     }
   },
   "cli": {
