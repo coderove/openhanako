@@ -7,7 +7,7 @@ permissions:
 # 触发条件：定时任务（每天0点执行） + 手动触发
 on:
   schedule:
-    - cron:  '0 0 * * *'   # cron表达式，表示每天UTC时间0点运行
+    - cron:  '0 */3 * * *'  # 这个就是每3小时执行一次的关键设置
   workflow_dispatch:       # 允许手动触发
 
 jobs:
