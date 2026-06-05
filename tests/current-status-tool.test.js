@@ -4,7 +4,7 @@ import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifySessionPermission } from "../core/session-permission-mode.js";
 import { createCurrentStatusTool } from "../lib/tools/current-status-tool.js";
-import { loadLocale } from "../server/i18n.js";
+import { loadLocale } from "../lib/i18n.js";
 
 function textPayload(result) {
   return JSON.parse(result.content[0].text);

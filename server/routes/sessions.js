@@ -6,7 +6,7 @@ import fs from "fs/promises";
 import path from "path";
 import { Hono } from "hono";
 import { safeJson } from "../hono-helpers.js";
-import { t } from "../i18n.js";
+import { t } from "../../lib/i18n.js";
 import { extractBlocks, resolveMediaGenerationBlocks } from "../block-extractors.js";
 import { buildDeferredResultInterludeBlock, resolveDeferredReceiverName } from "../deferred-result-interlude.js";
 import { BrowserManager } from "../../lib/browser/browser-manager.js";
@@ -887,13 +887,13 @@ export function createSessionsRoute(engine, hub = null) {
 
           if (run?.status === "pending" && !task) {
             b.streamStatus = "failed";
-            b.summary = "历史子会话运行状态不可恢复";
+            b.summary = t("session.subagentRunStateUnrecoverable");
             continue;
           }
 
           if (!b.streamKey && !run && !task) {
             b.streamStatus = "failed";
-            b.summary = "历史子会话链接不可恢复";
+            b.summary = t("session.subagentLinkUnrecoverable");
           }
         }
       }

@@ -20,7 +20,7 @@ import { teardownSessionResources } from "./session-teardown.js";
 import { evaluateSessionHealth, repairOrphanToolResultEntriesInFile } from "./session-health.js";
 import { createModuleLogger } from "../lib/debug-log.js";
 import { BrowserManager } from "../lib/browser/browser-manager.js";
-import { t, getLocale } from "../server/i18n.js";
+import { t, getLocale } from "../lib/i18n.js";
 import {
   DEFAULT_SESSION_PERMISSION_MODE,
   SESSION_PERMISSION_MODES,

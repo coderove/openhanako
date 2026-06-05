@@ -36,7 +36,7 @@ import { authorizeHttpRoute, isPublicHttpRoute } from "./http/route-security.js"
 // Pi SDK 的 fetch 请求会累积 AbortSignal listener，提高上限避免无害警告
 setMaxListeners(50);
 
-import { loadLocale } from "./i18n.js";
+import { loadLocale } from "../lib/i18n.js";
 import { createChatRoute } from "./routes/chat.js";
 import { createSessionsRoute } from "./routes/sessions.js";
 import { createSessionProjectsRoute } from "./routes/session-projects.js";

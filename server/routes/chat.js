@@ -10,7 +10,7 @@ import { extractBlocks } from "../block-extractors.js";
 import { toAppEventWsMessage } from "../app-events.js";
 import { wsSend, wsParse, wsSendSerialized } from "../ws-protocol.js";
 import { debugLog, createModuleLogger } from "../../lib/debug-log.js";
-import { t } from "../i18n.js";
+import { t } from "../../lib/i18n.js";
 import { getLastAssistantUsage } from "../../lib/pi-sdk/index.js";
 import { compactSessionWithCachePreservation, isStaleExtensionContextError } from "../../core/session-compactor.js";
 import { logLlmUsage } from "../../lib/llm/usage-observer.js";
@@ -1152,7 +1152,7 @@ export function createChatRoute(engine, hub, { upgradeWebSocket }) {
                 reply: sendReply,
               });
               if (!res.handled) {
-                wsSend(ws, { type: "slash_result", sessionPath: sp, text: `[未知命令] ${msg.text}` });
+                wsSend(ws, { type: "slash_result", sessionPath: sp, text: t("chat.unknownCommand", { text: msg.text }) });
               }
               return;
             }
@@ -1268,7 +1268,7 @@ export function createChatRoute(engine, hub, { upgradeWebSocket }) {
               }
               // Reject prompt while model switch is in progress
               if (engine.isSessionSwitching(promptSessionPath)) {
-                wsSend(ws, { type: "error", message: "正在切换模型，请稍候", sessionPath: promptSessionPath });
+                wsSend(ws, { type: "error", message: t("chat.modelSwitching"), sessionPath: promptSessionPath });
                 return;
               }
               try {

@@ -5,6 +5,7 @@ import {
   normalizeImageInput,
   saveBase64Images,
 } from "./common.js";
+import { t } from "../../../lib/i18n.js";
 
 const DEFAULT_BASE_URL = "https://api.minimaxi.com/v1";
 
@@ -19,7 +20,7 @@ async function getCredentials(ctx, params = {}) {
   const providerId = params.credentialProviderId || params.providerId || "minimax";
   const creds = await ctx.bus.request("provider:credentials", { providerId });
   if (creds.error || !creds.apiKey) {
-    throw new Error(`Provider "${providerId}" 未配置 API Key。请在设置 → Providers 中配置。`);
+    throw new Error(t("plugin.imageGen.providerNoApiKey", { providerId }));
   }
   return creds;
 }

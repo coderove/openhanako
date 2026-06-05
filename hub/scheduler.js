@@ -18,7 +18,7 @@ import {
   executePluginAutomationAction,
   getAutomationExecutor,
 } from "../lib/desk/automation-executors.js";
-import { getLocale } from "../server/i18n.js";
+import { getLocale } from "../lib/i18n.js";
 import { createFreshCompactDailyScheduler } from "../lib/fresh-compact/daily-scheduler.js";
 import { FreshCompactMaintainer } from "./fresh-compact-maintainer.js";
 import { createModuleLogger } from "../lib/debug-log.js";

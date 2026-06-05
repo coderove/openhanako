@@ -7,7 +7,13 @@
       "defaultModelInvalid": "默认生图模型不可用，需要在设置里重新配置。",
       "imageGenUnavailable": "生图工具未启用，需要先在设置里开启。",
       "agentUnavailable": "主 Agent 暂不可用，无法发起 Agent 生成。",
-      "disabled": "当前不能使用 Agent 生成。"
+      "disabled": "当前不能使用 Agent 生成。",
+      "label": "Agent 生成"
+    },
+    "gallery": {
+      "title": "小花美术馆",
+      "upload": "自己上传",
+      "close": "关闭小花美术馆"
     }
   },
   "selection": {
@@ -194,7 +200,9 @@
       "deleteConfirm": "永久删除此归档？此操作无法撤销。",
       "deleteFailed": "删除失败",
       "daysAgo": "归档于 {days} 天前"
-    }
+    },
+    "subagentRunStateUnrecoverable": "历史子会话运行状态不可恢复",
+    "subagentLinkUnrecoverable": "历史子会话链接不可恢复"
   },
   "common": {
     "on": "开",
@@ -245,7 +253,32 @@
       "revealInFinder": "打开文件夹",
       "copyPath": "复制文件路径",
       "downloadToDevice": "下载到本机"
-    }
+    },
+    "media": {
+      "kindVideo": "视频",
+      "kindImage": "图片",
+      "generationFailed": "{kind}生成失败",
+      "generationInProgress": "{kind}生成中",
+      "retryFailed": "重新生成失败",
+      "submitting": "提交中",
+      "retryLabel": "重新生成{kind}"
+    },
+    "subagentPreview": {
+      "historyUnrecoverable": "历史子会话链接不可恢复",
+      "noSession": "暂无可打开的 subagent session",
+      "connecting": "正在连接 subagent session...",
+      "loadingSession": "正在加载会话...",
+      "waitingContent": "正在等待会话内容...",
+      "noContent": "暂无会话内容"
+    },
+    "timeline": {
+      "navAriaLabel": "对话轮次导航",
+      "jumpTo": "跳转到 {label}",
+      "fallbackUser": "用户消息",
+      "fallbackAssistant": "助手消息"
+    },
+    "modelSwitching": "正在切换模型，请稍候",
+    "unknownCommand": "[未知命令] {text}"
   },
   "time": {
     "justNow": "刚刚",
@@ -336,7 +369,10 @@
     "compactBusy": "正在压缩...",
     "stop": "停止当前回复",
     "new": "开启新会话（归档历史）",
-    "reset": "重置会话（清除历史）"
+    "reset": "重置会话（清除历史）",
+    "commandError": "[命令错误] {message}",
+    "usage": "用法：{usage}",
+    "commandTimeout": "命令超时（>{ms}ms）"
   },
   "welcome": {
     "messages": [
@@ -632,7 +668,7 @@
       "done": "🔔 通知发了",
       "failed": "🔔 通知没发出去"
     },
-    "artifact": {
+    "create_artifact": {
       "running": "🖼️ {name} 正在写写画画",
       "done": "🖼️ 画好了",
       "failed": "🖼️ 画崩了"
@@ -645,7 +681,9 @@
     "channel": {
       "running": "📢 {name} 正在频道发言",
       "done": "📢 发完了",
-      "failed": "📢 发不出去"
+      "failed": "📢 发不出去",
+      "heading": "# 频道",
+      "ambiguousName": "频道名 \"{name}\" 不唯一，请改用频道 ID：{choices}"
     },
     "install_skill": {
       "running": "📥 {name} 正在装技能",
@@ -657,10 +695,115 @@
       "done": "⚙️ 改好了",
       "failed": "⚙️ 没改成"
     },
+    "automation": {
+      "running": "🤖 {name} 正在调度快捷指令",
+      "done": "🤖 指令跑完了",
+      "failed": "🤖 指令执行失败"
+    },
+    "computer": {
+      "running": "🖥️ {name} 正在操控你的屏幕",
+      "done": "🖥️ 操控完了",
+      "failed": "🖥️ 操控失败"
+    },
+    "terminal": {
+      "running": "💻 {name} 正在敲命令",
+      "done": "💻 敲完了",
+      "failed": "💻 命令执行失败"
+    },
+    "current_status": {
+      "running": "🕐 {name} 正在看看现在什么情况",
+      "done": "🕐 掌握信息了",
+      "failed": "🕐 获取信息失败"
+    },
+    "pin_memory": {
+      "running": "📌 {name} 正在把这件事钉起来",
+      "done": "📌 钉好了",
+      "failed": "📌 置顶失败"
+    },
+    "unpin_memory": {
+      "running": "📌 {name} 正在把钉子拔下来",
+      "done": "📌 拔掉了",
+      "failed": "📌 取消置顶失败"
+    },
+    "recall_experience": {
+      "running": "🧠 {name} 正在翻经验本",
+      "done": "🧠 翻到了",
+      "failed": "🧠 没找到相关经验"
+    },
+    "record_experience": {
+      "running": "🧠 {name} 正在把经验记下来",
+      "done": "🧠 记好了",
+      "failed": "🧠 记录失败"
+    },
+    "session_folders": {
+      "running": "📁 {name} 正在调整文件夹权限",
+      "done": "📁 调好了",
+      "failed": "📁 调整失败"
+    },
+    "stop_task": {
+      "running": "🛑 {name} 正在叫停后台任务",
+      "done": "🛑 停下来了",
+      "failed": "🛑 停止失败"
+    },
+    "todo_write": {
+      "running": "📝 {name} 正在写清单",
+      "done": "📝 写好了",
+      "failed": "📝 清单写入失败"
+    },
+    "generate-image": {
+      "running": "🎨 {name} 正在作图",
+      "done": "🎨 画好了",
+      "failed": "🎨 作图失败"
+    },
+    "generate-video": {
+      "running": "🎬 {name} 正在生成视频",
+      "done": "🎬 视频好了",
+      "failed": "🎬 视频生成失败"
+    },
+    "create-cover": {
+      "running": "🎨 {name} 正在设计封面",
+      "done": "🎨 封面好了",
+      "failed": "🎨 封面生成失败"
+    },
+    "apply-cover-candidate": {
+      "running": "🖼️ {name} 正在换封面",
+      "done": "🖼️ 换好了",
+      "failed": "🖼️ 封面应用失败"
+    },
+    "get-cover-style-guide": {
+      "running": "📖 {name} 正在翻风格手册",
+      "done": "📖 翻到了",
+      "failed": "📖 获取风格指南失败"
+    },
+    "list-capabilities": {
+      "running": "📋 {name} 正在清点能力",
+      "done": "📋 点完了",
+      "failed": "📋 能力清点失败"
+    },
     "_fallback": {
       "running": "🔧 {name} 正在忙碌中…",
       "done": "🔧 {name} 忙完了",
       "failed": "🔧 {name} 没忙明白"
+    },
+    "checkDeferred": {
+      "storeNotInitialized": "异步任务存储未初始化。",
+      "noActiveSession": "当前无活跃 session。",
+      "noTasks": "当前对话没有后台任务{qualifier}。",
+      "noTasksQualifier": "（状态: {status}）"
+    },
+    "workflow": {
+      "running": "🔄 {name} 正在编排工作流",
+      "done": "🔄 编排完了",
+      "failed": "🔄 工作流执行失败",
+      "scriptInvalid": "workflow 脚本非法: {message}",
+      "dispatched": "workflow \"{summary}\" 已派出后台执行（任务 {taskId}），完成后结果会自动回到对话。",
+      "syncComplete": "workflow \"{name}\" 完成，派出 {count} 个 agent。\n\n结果:\n{result}",
+      "executionFailed": "workflow 执行失败: {message}",
+      "resumeFromRunIdDesc": "前次 workflow 的 runId（taskId），用于断点续跑：已完成且 prompt+opts 未变的 agent 节点瞬间返回缓存结果，首个变化位置起重新执行。",
+      "journalResuming": "从 {count} 条缓存恢复"
+    },
+    "installSkill": {
+      "safetyBlocked": "[安全策略] 技能安全审查未通过，已阻止安装。\n原因：{reason}\n\n请告知用户此技能未通过安全审查，说明具体原因。用户可以在设置中关闭安全审查（不推荐）。"
     }
   },
   "file_output": {
@@ -674,7 +817,11 @@
     "unavailable": "模型不可用",
     "offline": "离线",
     "switchFailed": "切换模型失败",
-    "switchWhileStreaming": "回复中不能切换模型"
+    "switchWhileStreaming": "回复中不能切换模型",
+    "adaptation": {
+      "compacted": "已压缩对话历史以适配新模型",
+      "truncated": "早期对话已被截断以适配新模型"
+    }
   },
   "splash": {
     "lines": [
@@ -718,7 +865,8 @@
       "plugins": "插件",
       "experiments": "实验",
       "about": "关于",
-      "security": "安全"
+      "security": "安全",
+      "pluginMarketplace": "插件市场"
     },
     "experiments": {
       "title": "实验",
@@ -848,7 +996,12 @@
       "language": "语言",
       "languageHint": "切换语言后需要重新加载",
       "timezone": "时区",
-      "timezoneHint": "用于记忆时间标记、日记等"
+      "timezoneHint": "用于记忆时间标记、日记等",
+      "zhCN": "简体中文",
+      "zhTW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "en": "English"
     },
     "computerUse": {
       "title": "电脑控制",
@@ -954,7 +1107,11 @@
             "summary": "让 Agent 把多 Agent 编排脚本作为后台任务运行"
           }
         }
-      }
+      },
+      "generatingPreview": "正在生成预览",
+      "exportAgent": "导出助手",
+      "generatingCardPreview": "正在生成角色卡预览",
+      "exportedTo": "已导出到 {path}"
     },
     "general": {
       "title": "通用",
@@ -1125,7 +1282,8 @@
       "changeAvatar": "更换",
       "userNameHint": "Ta 怎么称呼你",
       "userProfile": "用户档案",
-      "userProfileHint": "让助手了解你：兴趣、习惯、偏好等，会注入到系统提示词中"
+      "userProfileHint": "让助手了解你：兴趣、习惯、偏好等，会注入到系统提示词中",
+      "nameLabel": "名字"
     },
     "crop": {
       "title": "调整头像",
@@ -1248,7 +1406,11 @@
       "models": "图片模型",
       "globalDefault": "全局默认",
       "followGlobal": "跟随全局默认",
-      "default": "默认"
+      "default": "默认",
+      "defaultOption": "默认",
+      "qualityLow": "低",
+      "qualityMedium": "中",
+      "qualityHigh": "高"
     },
     "oauth": {
       "title": "快速登录",
@@ -1519,7 +1681,42 @@
         "risk3": "社会工程和权限提升尝试",
         "body2": "关闭后，所有技能将不经审查直接安装。",
         "confirm": "我了解风险，关闭审查"
-      }
+      },
+      "bundleDialog": {
+        "createTitle": "新建 Bundle",
+        "renameTitle": "重命名 Bundle",
+        "dissolveTitle": "打散 Bundle",
+        "cancel": "取消",
+        "closeAriaLabel": "取消",
+        "dissolveConfirm": "打散 {name}？Skill 会保留在公共库里，并显示为散装 Skill。",
+        "bundleNameLabel": "Bundle 名字",
+        "cancelBtn": "取消",
+        "createBtn": "创建",
+        "saveBtn": "保存",
+        "dissolveBtn": "打散"
+      },
+      "exportedWithSkipped": "已导出 {fileName}，跳过 {count} 个缺失 Skill",
+      "exported": "已导出 {fileName}",
+      "createBundleBtn": "新建 Bundle",
+      "createBundleTitle": "新建 Skill Bundle",
+      "createBundleAriaLabel": "新建 Skill Bundle",
+      "emptyBundle": "空 Bundle",
+      "skillNotFound": "这个 Skill 已不存在",
+      "noLooseSkills": "没有散装 Skill",
+      "collapseBundleAriaLabel": "收起 Bundle",
+      "expandBundleAriaLabel": "展开 Bundle",
+      "enableBundleTitle": "启用整个 Bundle",
+      "disableBundleTitle": "关闭整个 Bundle",
+      "enableBundleAriaLabel": "启用 {name}",
+      "disableBundleAriaLabel": "关闭 {name}",
+      "renameBundleTitle": "重命名 Bundle",
+      "renameBundleAriaLabel": "重命名 {name}",
+      "exportBundleTitle": "导出 Skill Bundle",
+      "exportBundleAriaLabel": "导出 {name}",
+      "dissolveBundleTitle": "打散 Bundle",
+      "dissolveBundleAriaLabel": "打散 {name}",
+      "removeFromBundleTitle": "移出 Bundle，变为散装 Skill",
+      "removeFromBundleAriaLabel": "将 {name} 移出 Bundle"
     },
     "plugins": {
       "title": "插件",
@@ -1578,7 +1775,9 @@
       "marketDowngradeTo": "当前只能安装兼容版本 v{version}",
       "marketDowngradeConfirm": "当前版本是 v{from}，将降级到 v{to}。继续吗？",
       "marketReadmeLoading": "正在读取 README…",
-      "marketSelectPlugin": "选择一个插件查看 README"
+      "marketSelectPlugin": "选择一个插件查看 README",
+      "manageTitle": "管理插件",
+      "permissionTitle": "权限"
     },
     "mcp": {
       "masterTitle": "总开关",
@@ -1732,6 +1931,34 @@
         "将 App ID 和 App Secret 粘贴到上方输入框，打开开关即可"
       ],
       "whatsappHint": "即将支持"
+    },
+    "characterCard": {
+      "exportMemory": "导出记忆",
+      "importMemory": "导入记忆",
+      "noExportableMemory": "无可导出记忆",
+      "noImportableMemory": "无可导入记忆",
+      "confirm": "确定",
+      "exporting": "正在导出",
+      "importing": "正在导入",
+      "noDescription": "这个角色卡没有写入 Description。",
+      "noIshiki": "未提供 Ishiki",
+      "viewDetail": "查看角色卡详情",
+      "memoryCount": "{count} 个记忆项目，可选{action}",
+      "memoryCountExport": "导出",
+      "memoryCountImport": "导入",
+      "noMemory": "无记忆",
+      "factsSectionTitle": "重要事实",
+      "todaySectionTitle": "今天",
+      "weekSectionTitle": "本周早些时候",
+      "longtermSectionTitle": "长期情况",
+      "emptySection": "无",
+      "noIdentity": "未提供 Identity",
+      "noSkills": "未包含 Skill",
+      "cancel": "取消",
+      "readingCard": "正在读取角色卡",
+      "dropOrClick": "拖入角色卡或点击打开",
+      "readFailed": "角色卡读取失败",
+      "importFailed": "角色卡导入失败"
     }
   },
   "onboarding": {
@@ -2304,7 +2531,8 @@
     "stopTaskNotFound": "未找到任务 {taskId}，可能已完成或不存在",
     "stopTaskAlready": "任务 {taskId} 已经被终止过了",
     "stopTaskNoHandler": "任务 {taskId} 的类型不支持终止",
-    "stopTaskDone": "已终止任务 {taskId}"
+    "stopTaskDone": "已终止任务 {taskId}",
+    "regionUnavailable": "此区域暂时无法显示"
   },
   "main": {
     "tray": {
@@ -2481,5 +2709,228 @@
   "preview.markdownPreview": "预览",
   "preview.exitMarkdownPreview": "回到编辑",
   "preview.markdownEditorStatus": "选中 {selected} 字 · 共 {total} 字",
-  "preview.markdownAttachmentInsertFailed": "插入附件失败"
+  "preview.markdownAttachmentInsertFailed": "插入附件失败",
+  "subagent": {
+    "status": {
+      "interrupted": "已中断",
+      "aborted": "已终止",
+      "done": "已完成",
+      "failed": "失败",
+      "dispatched": "已派出",
+      "preparing": "准备中...",
+      "thinking": "正在思考...",
+      "callingTool": "正在调用 {name}...",
+      "executing": "执行中..."
+    }
+  },
+  "computerUse": {
+    "overlay": {
+      "foregroundTakeover": "前台接管",
+      "foregroundMessage": "目标应用不支持后台操作，正在由前台接管。按 Esc 强制退出。"
+    }
+  },
+  "plugin": {
+    "widget": {
+      "loadFailed": "加载失败",
+      "retry": "重试",
+      "hiddenPlugins": "已隐藏的插件",
+      "show": "显示",
+      "desk": "工作台",
+      "hideTitle": "隐藏「{title}」"
+    },
+    "page": {
+      "notFound": "插件未找到",
+      "loadFailed": "插件加载失败",
+      "retry": "重试"
+    },
+    "tab": {
+      "pinToBar": "固定到标签栏"
+    },
+    "imageGen": {
+      "notInitialized": "图片生成插件未初始化",
+      "noSessionPath": "图片生成需要明确的会话归属，当前工具调用缺少 sessionPath",
+      "noProvider": "没有可用的图片生成 provider",
+      "noTaskIdOrFile": "图片生成 provider 没有返回 taskId 或文件",
+      "unknownError": "未知错误",
+      "providerUnavailable": "指定的图片生成 provider \"{providerId}\" 不可用",
+      "providerUnavailableDetail": "指定的图片生成 provider \"{providerId}\" 不可用：{detail}",
+      "modelUnavailable": "指定的图片生成模型 \"{modelId}\" 不可用",
+      "modelUnavailableDetail": "指定的图片生成模型 \"{modelId}\" 不可用：{detail}",
+      "noConfiguredModel": "没有配置可用的生图模型",
+      "modelNotFound": "找不到模型 {modelId}",
+      "noRegisteredProtocol": "没有注册协议 {protocolId}",
+      "multipleProvidersSameModel": "多个 provider 都有同名模型，请同时指定 provider",
+      "modelNotInMediaProvider": "没有在 media provider 中找到这个模型",
+      "providerNoApiKey": "Provider \"{providerId}\" 未配置 API Key。请在设置 → Providers 中配置。",
+      "providerNotLoggedIn": "Provider \"{providerId}\" 未登录。请先在设置 → Providers 登录 OpenAI Codex。",
+      "apiKeyNotConfigured": "未配置 API Key",
+      "volcengineUnsupportedFormat": "Volcengine Seedream 仅支持 png/jpeg 输出格式，不支持 \"{format}\"",
+      "volcengineAdapterName": "火山引擎 Seedream"
+    },
+    "beautify": {
+      "coverStyleGuide": "Hana Markdown cover 的默认审美规范：\n\n1. 画风：现代 Anime / 动画电影 key visual，不使用传统东方刻板符号作为默认风格。\n2. 材质：强纸张质感、印刷纹理、细腻颗粒、温润材料感；像被装帧进纸本里的画面。\n3. 叙事：有电影感、有故事感、有文学气息；优先通过真实场景、人物动作、光线、道具关系、环境痕迹表达主题。\n4. 内容：阅读文章后提炼意象主题，做文章气质的视觉化，不要把文章摘要逐字画出来。\n5. 幻想感：星空、幻想、文学意象可以出现，但必须由场景自然承载，有现实重量和情感理由。\n6. 克制：避免廉价 AI 感的漂浮符号堆砌；超现实元素只有在叙事上有必要时才出现。\n7. 主题：浅色主题使用柔和暖光、低对比、干净留白、纸面纤维清晰；深色主题使用低照度、克制高光、暗部保留材料层次。\n8. 输出：默认让生图工具按横向 3:2 生成；如果供应商不支持，允许接近的横向比例，但不能拉伸图片。",
+      "themeTone": {
+        "dark": "深色主题：低照度、克制高光、暗部仍保留纸张纤维和材料层次。",
+        "light": "浅色主题：柔和暖光、低对比、干净留白、纸面纤维清晰。"
+      },
+      "userGuidancePrefix": "用户补充方向：{guidance}",
+      "attachmentDirName": "文本附件"
+    }
+  },
+  "preview": {
+    "cover": {
+      "saveImage": "保存图片",
+      "regenerateWithPrompt": "自定义提示词生成图片",
+      "deleteCover": "删除封面"
+    }
+  },
+  "mediaViewer": {
+    "ariaLabel": "媒体预览",
+    "close": "关闭",
+    "prev": "上一张",
+    "next": "下一张"
+  },
+  "action": {
+    "retry": "重试"
+  },
+  "mobile": {
+    "auth": {
+      "scopeError": "当前登录缺少工作台权限，请重新输入访问密钥。",
+      "loginFailed": "登录失败",
+      "title": "手机访问 Hana",
+      "deviceHelp": "输入桌面端为这台设备生成的访问密钥。登录后会改用 HttpOnly 会话 cookie。",
+      "passwordHelp": "使用桌面端设置的本地账号登录。局域网明文 HTTP 会被服务器拒绝，请使用本机、HTTPS 或可信 Tunnel。",
+      "tabLabel": "登录方式",
+      "deviceTab": "访问密钥",
+      "passwordTab": "用户名密码",
+      "deviceField": "访问密钥",
+      "usernameField": "用户名",
+      "passwordField": "密码",
+      "plaintextWarning": "远程明文链路不接收账号密码，避免把长期凭证暴露在局域网或 Tunnel 中。",
+      "submit": "登录"
+    },
+    "loading": "正在连接 Hana...",
+    "closeSidebar": "关闭侧边栏"
+  },
+  "approval": {
+    "toolAction": {
+      "title": "允许 Hana 执行这次操作",
+      "body": "当前会话处于先问模式，这次操作会改变本地或外部状态。"
+    },
+    "confirm": "同意",
+    "reject": "拒绝",
+    "computerApp": {
+      "title": "允许 Hana 使用电脑",
+      "body": "Hana 想控制这个应用来继续当前任务。"
+    },
+    "sessionFolders": {
+      "title": "允许 Hana 修改本对话的文件夹授权",
+      "body": "确认后，这个文件夹会成为当前对话的额外沙盒目录；不会改变工作目录，也不会写入提示词。",
+      "addLabel": "添加授权目录",
+      "removeLabel": "移除授权目录"
+    }
+  },
+  "auth": {
+    "oauthTimeout": "OAuth 超时：未收到浏览器回调。请检查端口 1455 是否被防火墙拦截或已被占用，Windows 用户也请确认 localhost 未被解析到 IPv6",
+    "oauthConnectFailed": "无法连接 OAuth 服务器{detail}。请在设置的安全页配置全局出站代理，或检查 HTTPS_PROXY 环境变量"
+  },
+  "deferred": {
+    "typeLabel": {
+      "subagent": "子助手",
+      "imageGeneration": "图片生成",
+      "videoGeneration": "视频生成",
+      "backgroundTask": "后台任务"
+    },
+    "interlude": {
+      "subagent": {
+        "success": "{receiver}收到了来自 {source} 的回复",
+        "failed": "{receiver}收到了来自 {source} 的失败回复",
+        "aborted": "{receiver}停止了来自 {source} 的回复"
+      },
+      "workflow": {
+        "success": "{receiver}收到了来自 {source} workflow 的回复",
+        "failed": "{receiver}收到了来自 {source} workflow 的失败回复",
+        "aborted": "{receiver}停止了 {source} workflow"
+      },
+      "tool": {
+        "success": "{receiver}拿到了来自 {source} 工具的结果",
+        "failed": "{receiver}没有拿到来自 {source} 工具的结果",
+        "aborted": "{receiver}停止了来自 {source} 工具的结果"
+      }
+    },
+    "noReason": "后台任务没有返回可展示的原因。",
+    "noPreviewText": "后台任务完成了，但没有返回可预览的文本。",
+    "fileSummaryMore": "- 还有 {count} 个文件",
+    "fileSummaryHeader": "生成文件：",
+    "mediaNoDisplayableFiles": "生成结果没有可显示文件"
+  },
+  "toolDef": {
+    "generateImage": {
+      "description": "根据文字描述生成图片。非阻塞：提交后立即返回，完成后自动显示。",
+      "promptDesc": "图片描述（中英文均可）",
+      "countDesc": "并发生成张数，默认 1，最大 9",
+      "imageDesc": "参考图路径（图生图）",
+      "ratioDesc": "长宽比：1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9",
+      "resolutionDesc": "统一分辨率档位：1k, 2k, 4k；由 adapter 映射为供应商最接近的尺寸",
+      "qualityDesc": "画质档位：low, medium, high, auto（由 adapter 映射为供应商参数）",
+      "modelDesc": "模型 ID 或简称（如 5.0、dall-e-3）。省略时使用已配置的默认模型",
+      "providerDesc": "指定 provider（可选）",
+      "submitted": "已提交 {count} 张图片生成，完成后会自动显示在下方卡片中。"
+    },
+    "generateVideo": {
+      "description": "根据文字描述生成视频。非阻塞：提交后立即返回，完成后自动显示。",
+      "promptDesc": "视频描述（中英文均可）",
+      "imageDesc": "参考图路径（图生视频）",
+      "durationDesc": "视频时长 4-15 秒（默认 5）",
+      "ratioDesc": "长宽比：1:1, 16:9, 9:16, 4:3, 3:4, 21:9",
+      "modelDesc": "模型版本：seedance2.0, seedance2.0fast（默认 seedance2.0）",
+      "providerDesc": "指定 provider（可选）",
+      "notInitialized": "视频生成插件未初始化",
+      "noProvider": "没有可用的视频生成 provider",
+      "submitFailed": "视频提交失败：{error}",
+      "submitFailedUnknown": "视频提交失败：未知错误",
+      "submitted": "已提交视频生成，完成后会自动显示在下方卡片中。"
+    },
+    "getCoverStyleGuide": {
+      "description": "当用户想为 Markdown 文档生成、替换、优化封面/头图/cover 时，先调用本工具读取 Hana 的封面审美规范；再根据文章内容写生图 prompt 或选择图片。",
+      "themeToneDesc": "当前 UI 主题明暗倾向；不确定时传 light。",
+      "userGuidanceDesc": "用户额外给出的风格方向，可选。",
+      "workflow": {
+        "step1": "确认目标 Markdown 路径",
+        "step2": "调用 beautify_get-cover-style-guide",
+        "step3": "阅读文章并按 style guide 写生图 prompt 或选择图片",
+        "step4": "准备已有图片",
+        "step5": "调用 beautify_create-cover 应用图片"
+      }
+    },
+    "applyCoverCandidate": {
+      "description": "把一个已有图片文件应用为 Markdown cover，并写回 frontmatter。",
+      "targetFilePathDesc": "Markdown 文件绝对路径。",
+      "generatedFilePathDesc": "已有图片的绝对路径，可以来自生图工具、内置头图或用户本地图片。",
+      "pixelWidthDesc": "图片像素宽，可选。",
+      "pixelHeightDesc": "图片像素高，可选。",
+      "targetFilePathRequired": "targetFilePath 必须是 Markdown 文件绝对路径。",
+      "generatedFilePathRequired": "generatedFilePath 必须是图片文件绝对路径。",
+      "applied": "已应用 cover，并写入 Markdown frontmatter。",
+      "failed": "应用 cover 失败：{error}"
+    },
+    "createCover": {
+      "description": "把一张已有图片应用为 Markdown Notion-like cover。若用户要求生成新封面，请先调用 beautify_get-cover-style-guide，再调用生图工具准备图片，最后用本工具写入 Markdown。",
+      "targetFilePathDesc": "Markdown 文件绝对路径。路径不确定时先向用户确认。",
+      "filePathDesc": "targetFilePath 的兼容别名。",
+      "generatedFilePathDesc": "已有图片的绝对路径，可以来自生图工具、内置头图或用户本地图片。",
+      "imageFilePathDesc": "generatedFilePath 的兼容别名。",
+      "pixelWidthDesc": "图片像素宽，可选；不传时工具会尽量从图片头读取。",
+      "pixelHeightDesc": "图片像素高，可选；不传时工具会尽量从图片头读取。",
+      "targetFilePathRequired": "需要一个明确的 Markdown 文件绝对路径；如果你是从普通聊天里发起，请先确认目标文件路径。",
+      "mustBeMarkdown": "目标文件必须是 .md Markdown 文件。",
+      "generatedFilePathRequired": "需要已有图片的绝对路径 generatedFilePath。请先调用 image-gen_generate-image 并等待任务完成，或选择内置/本地图片后，把图片 filePath 传给本工具。",
+      "applied": "已把图片应用为 Markdown cover，并写入 frontmatter。",
+      "failed": "应用 cover 失败：{error}"
+    },
+    "listCapabilities": {
+      "description": "列出 Beautify 工具目前支持的审美增强能力。",
+      "text": "Beautify 当前支持 Markdown cover 工作流：先读取封面风格说明，再准备一张图片，可以来自生图工具、未来的内置头图库或用户本地图片，最后把图片复制到附件文件夹并写入 cover frontmatter。"
+    }
+  }
 }

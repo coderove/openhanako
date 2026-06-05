@@ -6,7 +6,7 @@ import path from "path";
 import { Hono } from "hono";
 import { emitAppEvent } from "../app-events.js";
 import { safeJson } from "../hono-helpers.js";
-import { t } from "../i18n.js";
+import { t } from "../../lib/i18n.js";
 import { debugLog } from "../../lib/debug-log.js";
 import { getRawConfig, clearConfigCache } from "../../lib/memory/config-loader.js";
 import { FactStore } from "../../lib/memory/fact-store.js";

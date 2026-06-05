@@ -7,6 +7,7 @@ import {
   OPENAI_IMAGE_RATIOS,
   resolveOpenAiImageSize,
 } from "../lib/resolution-tiers.js";
+import { t } from "../../../lib/i18n.js";
 
 const PROVIDER_ID = "openai-codex-oauth";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -158,7 +159,7 @@ function resolveCodexToolSize(params, providerDefaults) {
 async function getCredentials(ctx) {
   const creds = await ctx.bus.request("provider:credentials", { providerId: PROVIDER_ID });
   if (creds.error || !creds.apiKey) {
-    throw new Error(`Provider "${PROVIDER_ID}" 未登录。请先在设置 → Providers 登录 OpenAI Codex。`);
+    throw new Error(t("plugin.imageGen.providerNotLoggedIn", { providerId: PROVIDER_ID }));
   }
   const accountId = creds.accountId || extractAccountIdFromToken(creds.apiKey);
   if (!accountId) {

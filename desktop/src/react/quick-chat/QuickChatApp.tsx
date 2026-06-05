@@ -104,10 +104,6 @@ function acceptQuickChatServerMessage(msg: any, sessionPath: string | null): boo
 
 export function QuickChatApp() {
   const { t } = useI18n();
-  const tt = useCallback((key: string, fallback: string) => {
-    const value = t(key);
-    return typeof value === 'string' && value && value !== key ? value : fallback;
-  }, [t]);
   const [connection, setConnection] = useState<ServerConnection | null>(null);
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -307,7 +303,7 @@ export function QuickChatApp() {
         applyRuntimePermissionMode(resolveQuickChatPermissionMode(permissionData));
       } catch (err) {
         console.error('[quick-chat] bootstrap failed:', err);
-        if (!cancelled) setError(tt('quickChat.serviceUnavailable', '无法连接 Hana 服务'));
+        if (!cancelled) setError(t('quickChat.serviceUnavailable'));
       }
     }
     bootstrap();
@@ -315,7 +311,7 @@ export function QuickChatApp() {
       cancelled = true;
       wsRef.current?.close();
     };
-  }, [applyRuntimeAgentList, applyRuntimePermissionMode, tt]);
+  }, [applyRuntimeAgentList, applyRuntimePermissionMode, t]);
 
   useEffect(() => {
     sessionPathRef.current = sessionPath;
@@ -433,7 +429,7 @@ export function QuickChatApp() {
           setSending(false);
           if (activeSessionPath) void loadMessages(activeSessionPath);
         } else if (msg.type === 'error') {
-          const text = typeof msg.message === 'string' ? msg.message : tt('quickChat.sendFailed', '发送失败');
+          const text = typeof msg.message === 'string' ? msg.message : t('quickChat.sendFailed');
           setError(text);
           setSending(false);
         }
@@ -445,7 +441,7 @@ export function QuickChatApp() {
       if (wsRef.current === ws) wsRef.current = null;
     };
     return ws;
-  }, [connection, tt]);
+  }, [connection, t]);
 
   const addFiles = useCallback((files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
@@ -499,7 +495,7 @@ export function QuickChatApp() {
       }),
     });
     const data = await res.json() as DetachedSessionResponse;
-    if (!data.path) throw new Error(data.error || tt('quickChat.createSessionFailed', '创建会话失败'));
+    if (!data.path) throw new Error(data.error || t('quickChat.createSessionFailed'));
     setSessionPath(data.path);
     sessionPathRef.current = data.path;
     const resolvedAgentId = data.agentId || nextAgentId || null;
@@ -529,7 +525,7 @@ export function QuickChatApp() {
       }));
     }
     return data.path;
-  }, [apiFetch, applyRuntimePermissionMode, refreshQuickChatRuntimeState, selectedAgent, tt]);
+  }, [apiFetch, applyRuntimePermissionMode, refreshQuickChatRuntimeState, selectedAgent, t]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -575,11 +571,11 @@ export function QuickChatApp() {
         ws.addEventListener('open', sendPayload, { once: true });
       }
     } catch (err) {
-      const text = err instanceof Error ? err.message : tt('quickChat.sendFailed', '发送失败');
+      const text = err instanceof Error ? err.message : t('quickChat.sendFailed');
       setError(text);
       setSending(false);
     }
-  }, [attachments, draft, ensureDetachedSession, ensureSocket, sending, tt]);
+  }, [attachments, draft, ensureDetachedSession, ensureSocket, sending, t]);
 
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const files: File[] = [];
@@ -611,7 +607,7 @@ export function QuickChatApp() {
   const canSend = (!!draft.trim() || attachments.length > 0) && !sending && !isStreaming && !!connection;
   const expanded = sessionItems.length > 0 || isStreaming;
   const displayError = error || inlineError;
-  const title = sessionTitle || tt('quickChat.title', '快速聊天');
+  const title = sessionTitle || t('quickChat.title');
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -651,7 +647,7 @@ export function QuickChatApp() {
                 <button
                   type="button"
                   className={styles.closeButton}
-                  aria-label={tt('quickChat.close', '关闭快速聊天')}
+                  aria-label={t('quickChat.close')}
                   onClick={closeQuickChat}
                 >
                   <CloseIcon />
@@ -659,7 +655,7 @@ export function QuickChatApp() {
                 <div className={styles.threadTitle}>{title}</div>
               </div>
               <button className={styles.openSessionButton} onClick={openFullSession} disabled={!sessionPath}>
-                {tt('quickChat.openFullSession', '打开完整会话')}
+                {t('quickChat.openFullSession')}
               </button>
             </div>
             <div className={styles.windowBody}>
@@ -667,7 +663,7 @@ export function QuickChatApp() {
                 <div className={styles.messages} ref={transcriptScrollRef}>
                   <div ref={transcriptContentRef} className={chatStyles.subagentPreviewTranscript}>
                     {sessionItems.length === 0 && isStreaming ? (
-                      <div className={styles.emptyTranscript}>{tt('quickChat.waitingReply', '正在等待回复...')}</div>
+                      <div className={styles.emptyTranscript}>{t('quickChat.waitingReply')}</div>
                     ) : (
                       <ChatTranscript
                         items={sessionItems}
@@ -717,13 +713,13 @@ export function QuickChatApp() {
                 void send();
               }
             }}
-            placeholder={tt('input.placeholder', '说点什么...')}
+            placeholder={t('input.placeholder')}
             rows={expanded ? 2 : 3}
           />
 
           <div className={classNames(inputStyles['input-bottom-bar'], styles.dragBottomBar)}>
             <div className={inputStyles['input-actions']}>
-              <button className={inputStyles['attach-btn']} title={tt('quickChat.attachImage', '添加图片')} onClick={() => fileInputRef.current?.click()}>
+              <button className={inputStyles['attach-btn']} title={t('quickChat.attachImage')} onClick={() => fileInputRef.current?.click()}>
                 <PlusIcon />
               </button>
               <span className={styles.lockedPlanMode}>

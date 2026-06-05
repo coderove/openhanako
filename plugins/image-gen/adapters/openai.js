@@ -8,6 +8,7 @@ import {
   OPENAI_IMAGE_RATIOS,
   resolveOpenAiImageSize,
 } from "../lib/resolution-tiers.js";
+import { t } from "../../../lib/i18n.js";
 
 const FORMAT_TO_MIME = {
   png: "image/png",
@@ -65,7 +66,7 @@ export const openaiImageAdapter = {
     try {
       const creds = await ctx.bus.request("provider:credentials", { providerId: "openai" });
       if (creds.error || !creds.apiKey) {
-        return { ok: false, message: creds.error || "未配置 API Key" };
+        return { ok: false, message: creds.error || t("plugin.imageGen.apiKeyNotConfigured") };
       }
       return { ok: true };
     } catch (err) {
@@ -78,7 +79,7 @@ export const openaiImageAdapter = {
     const providerId = params.credentialProviderId || params.providerId || "openai";
     const creds = await ctx.bus.request("provider:credentials", { providerId });
     if (creds.error || !creds.apiKey) {
-      throw new Error(`Provider "${providerId}" 未配置 API Key。请在设置 → Providers 中配置。`);
+      throw new Error(t("plugin.imageGen.providerNoApiKey", { providerId }));
     }
 
     const { apiKey, baseUrl } = creds;

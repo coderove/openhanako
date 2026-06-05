@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { saveImage } from "../lib/download.js";
 import { resolveModelId } from "../lib/model-catalog.js";
+import { t } from "../../../lib/i18n.js";
 
 const FORMAT_TO_MIME = {
   png: "image/png",
@@ -49,7 +50,7 @@ function resolveOutputFormat(format) {
   const normalized = String(format || "jpeg").trim().toLowerCase();
   const value = normalized === "jpg" ? "jpeg" : normalized;
   if (!OUTPUT_FORMATS.has(value)) {
-    throw new Error(`Volcengine Seedream 仅支持 png/jpeg 输出格式，不支持 "${format}"`);
+    throw new Error(t("plugin.imageGen.volcengineUnsupportedFormat", { format }));
   }
   return value;
 }
@@ -86,7 +87,7 @@ export const volcengineImageAdapter = {
   id: "volcengine",
   protocolId: "volcengine-images",
   aliases: ["volcengine-coding"],
-  name: "火山引擎 Seedream",
+  name: t("plugin.imageGen.volcengineAdapterName"),
   types: ["image"],
   capabilities: {
     ratios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"],
@@ -97,7 +98,7 @@ export const volcengineImageAdapter = {
     try {
       const creds = await resolveVolcengineCredentials(ctx);
       if (creds.error || !creds.apiKey) {
-        return { ok: false, message: creds.error || "未配置 API Key" };
+        return { ok: false, message: creds.error || t("plugin.imageGen.apiKeyNotConfigured") };
       }
       return { ok: true };
     } catch (err) {
@@ -109,7 +110,7 @@ export const volcengineImageAdapter = {
     // 1. Fetch credentials — try volcengine first, fall back to volcengine-coding
     const creds = await resolveVolcengineCredentials(ctx, params.credentialProviderId || params.providerId);
     if (creds.error || !creds.apiKey) {
-      throw new Error(`Provider "volcengine" 未配置 API Key。请在设置 → Providers 中配置。`);
+      throw new Error(t("plugin.imageGen.providerNoApiKey", { providerId: "volcengine" }));
     }
 
     const { apiKey, baseUrl } = creds;

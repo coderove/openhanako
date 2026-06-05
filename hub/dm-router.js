@@ -21,7 +21,7 @@ import {
 } from "../lib/channels/channel-store.js";
 import { runAgentPhoneSession } from "./agent-executor.js";
 import { debugLog, createModuleLogger } from "../lib/debug-log.js";
-import { getLocale } from "../server/i18n.js";
+import { getLocale } from "../lib/i18n.js";
 import {
   getAgentPhoneProjectionPath,
   readAgentPhoneProjection,

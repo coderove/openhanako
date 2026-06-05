@@ -35,7 +35,7 @@ import { DefaultResourceLoader, SettingsManager } from "../lib/pi-sdk/index.js";
 import { compactSessionWithCachePreservation, isStaleExtensionContextError } from "./session-compactor.js";
 import { DeferredResultCoordinator } from "../lib/deferred-result-coordinator.js";
 import { getToolSessionPath, normalizeToolRuntimeContext } from "../lib/tools/tool-session.js";
-import { loadLocale } from "../server/i18n.js";
+import { loadLocale } from "../lib/i18n.js";
 import { createApprovalGateway, createModelApprovalReviewer } from "../lib/approval-gateway.js";
 import { callText } from "./llm-client.js";
 
@@ -114,7 +114,7 @@ import { debugLog, createModuleLogger } from "../lib/debug-log.js";
 import { createSandboxedTools } from "../lib/sandbox/index.js";
 import { externalReadPathsFromSessionFiles } from "../lib/sandbox/win32-policy.js";
 import { Win32LegacySandboxCleanupQueue } from "../lib/sandbox/win32-legacy-migration.js";
-import { t } from "../server/i18n.js";
+import { t } from "../lib/i18n.js";
 import { CheckpointStore } from "../lib/checkpoint-store.js";
 import { assertAllToolsCategorized } from "../shared/tool-categories.js";
 import { workspaceRootsForSandbox } from "../shared/workspace-scope.js";
