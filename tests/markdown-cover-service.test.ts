@@ -1,8 +1,9 @@
+// @ts-nocheck
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyMarkdownCoverFromGeneratedFile } from "../plugins/beautify/lib/markdown-cover-service.js";
+import { applyMarkdownCoverFromGeneratedFile } from "../plugins/beautify/lib/markdown-cover-service.ts";
 
 describe("markdown cover service", () => {
   let tmpDir;

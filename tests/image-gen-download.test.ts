@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
@@ -9,7 +10,7 @@ afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
 
 describe("saveImage", () => {
   it("writes buffer to generated/ with correct filename pattern", async () => {
-    const { saveImage } = await import("../plugins/image-gen/lib/download.js");
+    const { saveImage } = await import("../plugins/image-gen/lib/download.ts");
     const buf = Buffer.from("fake-png-data");
     const result = await saveImage(buf, "image/png", tmpDir);
 
@@ -20,7 +21,7 @@ describe("saveImage", () => {
   });
 
   it("derives extension from mimeType", async () => {
-    const { saveImage } = await import("../plugins/image-gen/lib/download.js");
+    const { saveImage } = await import("../plugins/image-gen/lib/download.ts");
     const buf = Buffer.from("fake-jpeg-data");
     const result = await saveImage(buf, "image/jpeg", tmpDir);
     expect(result.filename).toMatch(/\.jpg$/);

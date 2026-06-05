@@ -37,7 +37,7 @@ vi.mock("../lib/debug-log.js", () => ({
 }));
 
 import { SessionCoordinator } from "../core/session-coordinator.ts";
-import { isBeautifyEnabledForAgentConfig } from "../plugins/beautify/lib/availability.js";
+import { isBeautifyEnabledForAgentConfig } from "../plugins/beautify/lib/availability.ts";
 import { CORE_TOOL_NAMES } from "../shared/tool-categories.ts";
 
 // Fake tool objects — only needs `.name` to satisfy `.map(t => t.name)` paths

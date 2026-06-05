@@ -7,7 +7,7 @@ import {
   COVER_GALLERY_PRESETS,
   getCoverGalleryPreset,
 } from "../shared/cover-gallery-presets.ts";
-import { resolveCoverGalleryPresetImagePath } from "../plugins/beautify/lib/cover-gallery-assets.js";
+import { resolveCoverGalleryPresetImagePath } from "../plugins/beautify/lib/cover-gallery-assets.ts";
 
 describe("cover gallery presets", () => {
   it("keeps built-in cover presets as plain bundled asset file names", () => {

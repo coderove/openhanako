@@ -133,6 +133,7 @@ export default [
     files: [
       'cli/**/*.ts', 'core/**/*.ts', 'hub/**/*.ts',
       'lib/**/*.ts', 'server/**/*.ts', 'shared/**/*.ts',
+      'plugins/**/*.ts',
       'tests/**/*.{ts,tsx}',
     ],
     rules: {

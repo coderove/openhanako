@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { description, execute } from "../plugins/beautify/tools/get-cover-style-guide.js";
+import { description, execute } from "../plugins/beautify/tools/get-cover-style-guide.ts";
 
 describe("beautify cover style guide tool", () => {
   it("actively directs agents to read style guidance before creating markdown covers", async () => {

@@ -9,7 +9,7 @@ let execute, name, description, parameters;
 
 beforeEach(async () => {
   vi.resetModules();
-  const mod = await import("../plugins/image-gen/tools/generate-image.js");
+  const mod = await import("../plugins/image-gen/tools/generate-image.ts");
   execute = mod.execute;
   name = mod.name;
   description = mod.description;

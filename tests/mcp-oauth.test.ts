@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, vi } from "vitest";
 import {
   createMcpOAuthAuthorization,
@@ -5,8 +6,8 @@ import {
   exchangeMcpOAuthCode,
   refreshMcpOAuthToken,
   registerMcpOAuthClient,
-} from "../plugins/mcp/lib/mcp-oauth.js";
-import { McpHttpError } from "../plugins/mcp/lib/mcp-http-client.js";
+} from "../plugins/mcp/lib/mcp-oauth.ts";
+import { McpHttpError } from "../plugins/mcp/lib/mcp-http-client.ts";
 
 function jsonResponse(body, { status = 200, headers = {} } = {}) {
   return new Response(JSON.stringify(body), {

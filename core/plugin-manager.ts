@@ -14,6 +14,24 @@ const log = createModuleLogger("plugin-manager");
 const KNOWN_CONTRIBUTION_DIRS = [
   "tools", "routes", "skills", "agents", "commands", "providers",
 ];
+/** Accept .ts (preferred) and .js plugin source files. */
+const PLUGIN_SOURCE_EXTS = [".ts", ".js"];
+function isPluginSourceFile(filename) {
+  return PLUGIN_SOURCE_EXTS.some((ext) => filename.endsWith(ext));
+}
+function resolvePluginEntry(pluginDir) {
+  for (const ext of PLUGIN_SOURCE_EXTS) {
+    const p = path.join(pluginDir, `index${ext}`);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+function stripPluginSourceExt(filename) {
+  for (const ext of PLUGIN_SOURCE_EXTS) {
+    if (filename.endsWith(ext)) return filename.slice(0, -ext.length);
+  }
+  return filename;
+}
 const KNOWN_UI_HOST_CAPABILITIES = new Set([
   "external.open",
   "clipboard.writeText",
@@ -319,7 +337,7 @@ export class PluginManager {
       if (fs.existsSync(path.join(pluginDir, dir))) addContribution(contributions, dir);
     }
     if (fs.existsSync(path.join(pluginDir, "extensions"))) addContribution(contributions, "extensions");
-    const hasLifecycle = fs.existsSync(path.join(pluginDir, "index.js"));
+    const hasLifecycle = resolvePluginEntry(pluginDir) !== null;
     if (hasLifecycle) addContribution(contributions, "lifecycle");
     if (manifest?.contributes?.configuration && hasConfigProperties(configSchema)) {
       addContribution(contributions, "configuration");
@@ -520,7 +538,7 @@ export class PluginManager {
     entry.activationReason = reason;
     const run = async () => {
       try {
-        const indexPath = path.join(entry.pluginDir, "index.js");
+        const indexPath = resolvePluginEntry(entry.pluginDir);
         const mod = await this._runLoadStage(entry, "lifecycle import", () => freshImport(indexPath));
         const PluginClass = mod.default;
         if (PluginClass && typeof PluginClass === "function") {
@@ -590,7 +608,7 @@ export class PluginManager {
   async _loadTools(entry) {
     const toolsDir = path.join(entry.pluginDir, "tools");
     if (!fs.existsSync(toolsDir)) return;
-    const files = fs.readdirSync(toolsDir).filter((f) => f.endsWith(".js"));
+    const files = fs.readdirSync(toolsDir).filter(isPluginSourceFile);
     const ctx = entry.ctx;
     for (const file of files) {
       const filePath = path.join(toolsDir, file);
@@ -729,7 +747,7 @@ export class PluginManager {
   async _loadCommands(entry) {
     const cmdsDir = path.join(entry.pluginDir, "commands");
     if (!fs.existsSync(cmdsDir)) return;
-    const files = fs.readdirSync(cmdsDir).filter((f) => f.endsWith(".js"));
+    const files = fs.readdirSync(cmdsDir).filter(isPluginSourceFile);
     for (const file of files) {
       const filePath = path.join(cmdsDir, file);
       try {
@@ -812,7 +830,7 @@ export class PluginManager {
       await next();
     });
 
-    const files = fs.readdirSync(routesDir).filter((f) => f.endsWith(".js"));
+    const files = fs.readdirSync(routesDir).filter(isPluginSourceFile);
     for (const file of files) {
       const filePath = path.join(routesDir, file);
       try {
@@ -827,7 +845,7 @@ export class PluginManager {
               c.set("agentId", agentId);
               await next();
             });
-            const prefix = "/" + path.basename(file, ".js");
+            const prefix = "/" + stripPluginSourceExt(file);
             app.route(prefix, sub);
           } else if (typeof sub === "function") {
             // Factory function — pass ctx as second arg
@@ -854,12 +872,12 @@ export class PluginManager {
 
   /**
    * 加载 extensions/ 目录下的 Pi SDK extension 工厂函数。
-   * 每个 .js 文件导出 (pi: ExtensionAPI) => void，在 session 创建时被 Pi SDK 调用。
+   * 每个 .ts/.js 文件导出 (pi: ExtensionAPI) => void，在 session 创建时被 Pi SDK 调用。
    */
   async _loadExtensions(entry) {
     const extDir = path.join(entry.pluginDir, "extensions");
     if (!fs.existsSync(extDir)) return;
-    const files = fs.readdirSync(extDir).filter((f) => f.endsWith(".js"));
+    const files = fs.readdirSync(extDir).filter(isPluginSourceFile);
     for (const file of files) {
       const filePath = path.join(extDir, file);
       try {
@@ -1031,7 +1049,7 @@ export class PluginManager {
   async _loadProviders(entry) {
     const providersDir = path.join(entry.pluginDir, "providers");
     if (!fs.existsSync(providersDir)) return;
-    const files = fs.readdirSync(providersDir).filter((f) => f.endsWith(".js"));
+    const files = fs.readdirSync(providersDir).filter(isPluginSourceFile);
     for (const file of files) {
       const filePath = path.join(providersDir, file);
       try {
@@ -1329,7 +1347,7 @@ export class PluginManager {
   isValidPluginDir(dirPath) {
     const validMarkers = [
       ...KNOWN_CONTRIBUTION_DIRS,
-      "manifest.json", "index.js", "extensions",
+      "manifest.json", "index.ts", "index.js", "extensions",
     ];
     return validMarkers.some(marker => {
       const p = path.join(dirPath, marker);

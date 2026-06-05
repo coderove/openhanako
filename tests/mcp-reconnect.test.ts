@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * #1286 阶段② — MCP 三传输统一保活/自动重连（runtime 调度层）
  *
@@ -13,8 +14,8 @@
  *   - autoReconnect=false 的连接器不重连
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpRuntime } from "../plugins/mcp/lib/mcp-runtime.js";
-import { McpHttpError } from "../plugins/mcp/lib/mcp-http-client.js";
+import { McpRuntime } from "../plugins/mcp/lib/mcp-runtime.ts";
+import { McpHttpError } from "../plugins/mcp/lib/mcp-http-client.ts";
 
 /**
  * 一个可被 runtime 通过 onClose 回调驱动的 fake client。

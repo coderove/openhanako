@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import mediaRoute from "../plugins/image-gen/routes/media.js";
+import mediaRoute from "../plugins/image-gen/routes/media.ts";
 
 describe("image-gen provider discovery", () => {
   it("uses provider media capabilities instead of a hardcoded image provider catalog", async () => {

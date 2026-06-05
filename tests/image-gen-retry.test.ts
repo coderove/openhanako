@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { retryImageTask } from "../plugins/image-gen/lib/image-task-runner.js";
-import registerTaskRoutes from "../plugins/image-gen/routes/tasks.js";
+import { retryImageTask } from "../plugins/image-gen/lib/image-task-runner.ts";
+import registerTaskRoutes from "../plugins/image-gen/routes/tasks.ts";
 
 async function flushBackgroundSubmits() {
   await Promise.resolve();

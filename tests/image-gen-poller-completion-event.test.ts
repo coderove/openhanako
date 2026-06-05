@@ -1,9 +1,10 @@
+// @ts-nocheck
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TaskStore } from "../plugins/image-gen/lib/task-store.js";
-import { Poller } from "../plugins/image-gen/lib/poller.js";
+import { TaskStore } from "../plugins/image-gen/lib/task-store.ts";
+import { Poller } from "../plugins/image-gen/lib/poller.ts";
 
 describe("image-gen poller completion event", () => {
   let tmpDir;

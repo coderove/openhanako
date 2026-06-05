@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { execute } from "../plugins/beautify/tools/create-cover.js";
+import { execute } from "../plugins/beautify/tools/create-cover.ts";
 
 describe("beautify create-cover tool", () => {
   let tmpDir;

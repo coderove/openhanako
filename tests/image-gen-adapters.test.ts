@@ -5,7 +5,7 @@ const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 // saveImage writes to disk — mock it out so tests stay pure
-vi.mock("../plugins/image-gen/lib/download.js", () => ({
+vi.mock("../plugins/image-gen/lib/download.ts", () => ({
   saveImage: vi.fn(async (_buf, _mime, _dir, customName) => {
     const filename = customName ? `${customName}-abc.png` : `1234-abc.png`;
     return { filename, filePath: `/tmp/generated/${filename}` };
@@ -46,7 +46,7 @@ describe("volcengine adapter", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("does not send Seedream 5-only output_format to Seedream 4.0", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     const fakeB64 = Buffer.from("fake-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -82,7 +82,7 @@ describe("volcengine adapter", () => {
   });
 
   it("sends output_format only for Seedream 5 models", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     const fakeB64 = Buffer.from("fake-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -102,7 +102,7 @@ describe("volcengine adapter", () => {
   });
 
   it("maps generic 1k resolution to the nearest Seedream size tier", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     const fakeB64 = Buffer.from("img").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -123,7 +123,7 @@ describe("volcengine adapter", () => {
   });
 
   it("applies Seedream 3-only providerDefaults without leaking them to newer models", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     const fakeB64 = Buffer.from("img").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -165,7 +165,7 @@ describe("volcengine adapter", () => {
   });
 
   it("throws on API error with status and message", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     mockFetch.mockResolvedValueOnce({
       ok: false,
@@ -180,7 +180,7 @@ describe("volcengine adapter", () => {
   });
 
   it("throws when data array is empty", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -194,7 +194,7 @@ describe("volcengine adapter", () => {
   });
 
   it("accepts Volcengine Coding Plan credentials in the same auth path used by submit", async () => {
-    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.js");
+    const { volcengineImageAdapter } = await import("../plugins/image-gen/adapters/volcengine.ts");
 
     const request = vi.fn(async (type, payload) => {
       if (type === "provider:credentials" && payload.providerId === "volcengine") {
@@ -224,7 +224,7 @@ describe("openai adapter", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("sends correct request and returns files from b64_json", async () => {
-    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.js");
+    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.ts");
 
     const fakeB64 = Buffer.from("fake-openai-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -257,7 +257,7 @@ describe("openai adapter", () => {
   });
 
   it("uses official OpenAI image default model when no model is provided", async () => {
-    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.js");
+    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.ts");
 
     const fakeB64 = Buffer.from("img").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -273,7 +273,7 @@ describe("openai adapter", () => {
   });
 
   it("maps generic 4k resolution to gpt-image-2 size", async () => {
-    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.js");
+    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.ts");
 
     const fakeB64 = Buffer.from("img").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -296,7 +296,7 @@ describe("openai adapter", () => {
   });
 
   it("uses JSON images references for OpenAI URL edits", async () => {
-    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.js");
+    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.ts");
 
     const fakeB64 = Buffer.from("edited").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -320,7 +320,7 @@ describe("openai adapter", () => {
   });
 
   it("applies providerDefaults (background)", async () => {
-    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.js");
+    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.ts");
 
     const fakeB64 = Buffer.from("img").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -344,7 +344,7 @@ describe("openai adapter", () => {
   });
 
   it("throws on API error", async () => {
-    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.js");
+    const { openaiImageAdapter } = await import("../plugins/image-gen/adapters/openai.ts");
 
     mockFetch.mockResolvedValueOnce({
       ok: false,
@@ -363,7 +363,7 @@ describe("openai codex oauth adapter", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("uses Codex OAuth credentials and saves image_generation_call results", async () => {
-    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.js");
+    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.ts");
 
     const fakeB64 = Buffer.from("fake-codex-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -426,7 +426,7 @@ describe("openai codex oauth adapter", () => {
   });
 
   it("derives the Codex account id from the OAuth token when credentials omit it", async () => {
-    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.js");
+    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.ts");
 
     const fakeB64 = Buffer.from("fake-codex-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -451,7 +451,7 @@ describe("openai codex oauth adapter", () => {
   });
 
   it("parses Codex streaming image_generation_call results", async () => {
-    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.js");
+    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.ts");
 
     const fakeB64 = Buffer.from("fake-codex-stream-image").toString("base64");
     const encoder = new TextEncoder();
@@ -493,7 +493,7 @@ describe("openai codex oauth adapter", () => {
   });
 
   it("requires a decodable Codex account id for ChatGPT backend requests", async () => {
-    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.js");
+    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.ts");
 
     const ctx = makeBusCtx("oauth-token", "https://chatgpt.com/backend-api", "openai-codex-oauth");
 
@@ -503,7 +503,7 @@ describe("openai codex oauth adapter", () => {
   });
 
   it("maps generic 4k resolution to the nearest Codex image tool size", async () => {
-    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.js");
+    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.ts");
 
     const fakeB64 = Buffer.from("fake-codex-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -542,7 +542,7 @@ describe("openai codex oauth adapter", () => {
   });
 
   it("accepts generic Codex size tiers but still rejects impossible pixel sizes", async () => {
-    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.js");
+    const { openaiCodexImageAdapter } = await import("../plugins/image-gen/adapters/openai-codex.ts");
 
     const fakeB64 = Buffer.from("fake-codex-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -584,7 +584,7 @@ describe("minimax adapter", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("calls MiniMax image_generation and saves base64 images", async () => {
-    const { minimaxImageAdapter } = await import("../plugins/image-gen/adapters/minimax.js");
+    const { minimaxImageAdapter } = await import("../plugins/image-gen/adapters/minimax.ts");
 
     const fakeB64 = Buffer.from("minimax-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -617,7 +617,7 @@ describe("minimax adapter", () => {
   });
 
   it("rejects MiniMax image resolution instead of silently dropping it", async () => {
-    const { minimaxImageAdapter } = await import("../plugins/image-gen/adapters/minimax.js");
+    const { minimaxImageAdapter } = await import("../plugins/image-gen/adapters/minimax.ts");
 
     const ctx = makeBusCtx("minimax-key", "https://api.minimaxi.com/v1", "minimax");
     await expect(minimaxImageAdapter.submit({
@@ -633,7 +633,7 @@ describe("gemini image adapter", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("calls Gemini generateContent and saves inlineData images", async () => {
-    const { geminiImageAdapter } = await import("../plugins/image-gen/adapters/gemini.js");
+    const { geminiImageAdapter } = await import("../plugins/image-gen/adapters/gemini.ts");
 
     const fakeB64 = Buffer.from("gemini-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -672,7 +672,7 @@ describe("gemini image adapter", () => {
   });
 
   it("downloads ordinary image URLs and sends Gemini reference images as inline data", async () => {
-    const { geminiImageAdapter } = await import("../plugins/image-gen/adapters/gemini.js");
+    const { geminiImageAdapter } = await import("../plugins/image-gen/adapters/gemini.ts");
 
     const fakeB64 = Buffer.from("gemini-image").toString("base64");
     mockFetch
@@ -711,7 +711,7 @@ describe("gemini image adapter", () => {
   });
 
   it("rejects unsupported Gemini image sizes instead of raw passthrough", async () => {
-    const { geminiImageAdapter } = await import("../plugins/image-gen/adapters/gemini.js");
+    const { geminiImageAdapter } = await import("../plugins/image-gen/adapters/gemini.ts");
 
     const fakeB64 = Buffer.from("gemini-image").toString("base64");
     mockFetch.mockResolvedValueOnce({
@@ -740,7 +740,7 @@ describe("dashscope image adapter", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("submits async Wan image tasks and queries result URLs", async () => {
-    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.js");
+    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.ts");
 
     mockFetch
       .mockResolvedValueOnce({
@@ -787,7 +787,7 @@ describe("dashscope image adapter", () => {
   });
 
   it("saves DashScope async base64 image results instead of treating them as URLs", async () => {
-    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.js");
+    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.ts");
     const fakeB64 = Buffer.from("dashscope-base64-image").toString("base64");
 
     mockFetch.mockResolvedValueOnce({
@@ -809,7 +809,7 @@ describe("dashscope image adapter", () => {
   });
 
   it("submits Qwen 2 image models through the DashScope multimodal endpoint", async () => {
-    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.js");
+    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.ts");
 
     mockFetch
       .mockResolvedValueOnce({
@@ -846,7 +846,7 @@ describe("dashscope image adapter", () => {
   });
 
   it("submits Qwen async text-to-image models with input.prompt", async () => {
-    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.js");
+    const { dashscopeImageAdapter } = await import("../plugins/image-gen/adapters/dashscope.ts");
 
     mockFetch.mockResolvedValueOnce({
       ok: true,

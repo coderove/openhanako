@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AdapterRegistry } from "../plugins/image-gen/lib/adapter-registry.js";
+import { AdapterRegistry } from "../plugins/image-gen/lib/adapter-registry.ts";
 
 describe("image-gen AdapterRegistry", () => {
   it("resolves adapters by protocolId and compatibility aliases", () => {

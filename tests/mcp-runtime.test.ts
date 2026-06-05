@@ -8,8 +8,8 @@ import {
   isMcpToolEnabledForAgentConfig,
   normalizeMcpConfig,
   toMcpToolId,
-} from "../plugins/mcp/lib/mcp-runtime.js";
-import { McpHttpError } from "../plugins/mcp/lib/mcp-http-client.js";
+} from "../plugins/mcp/lib/mcp-runtime.ts";
+import { McpHttpError } from "../plugins/mcp/lib/mcp-http-client.ts";
 
 describe("MCP runtime policy", () => {
   it("uses stable sanitized tool ids for dynamic MCP tools", () => {
