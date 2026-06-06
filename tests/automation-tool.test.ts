@@ -379,6 +379,28 @@ describe("automation tool", () => {
     expect(store.addJob).toHaveBeenCalledOnce();
   });
 
+  it("only declares create/update as deferred drafts when direct auto approve is disabled", () => {
+    const deferredTool = createAutomationTool(makeStore(), {
+      getAutoApprove: () => false,
+    });
+    const directCommitTool = createAutomationTool(makeStore(), {
+      getAutoApprove: () => true,
+    });
+
+    expect(deferredTool.sessionPermission.describeSideEffect({ action: "create" })).toMatchObject({
+      kind: "deferred_mutation_draft",
+      commit: "requires_user_confirmation",
+      ruleId: "automation-draft-no-write",
+    });
+    expect(deferredTool.sessionPermission.describeSideEffect({ action: "update" })).toMatchObject({
+      kind: "deferred_mutation_draft",
+      commit: "requires_user_confirmation",
+      ruleId: "automation-draft-no-write",
+    });
+    expect(deferredTool.sessionPermission.describeSideEffect({ action: "list" })).toBeNull();
+    expect(directCommitTool.sessionPermission.describeSideEffect({ action: "create" })).toBeNull();
+  });
+
   it("rejects unknown automation actions", async () => {
     const store = makeStore();
     const tool = createAutomationTool(store, {

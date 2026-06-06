@@ -88,6 +88,19 @@ function labelFor(params, prompt = "", existing: any = null) {
   return typeof prompt === "string" ? prompt.slice(0, 40) : "";
 }
 
+function isDraftMutationAction(params) {
+  return params?.action === "create" || params?.action === "update";
+}
+
+function automationDraftSideEffect() {
+  return {
+    kind: "deferred_mutation_draft",
+    commit: "requires_user_confirmation",
+    ruleId: "automation-draft-no-write",
+    summary: "Automation create/update generates a confirmation card; cron store writes only after the card is confirmed.",
+  };
+}
+
 function genericAgentRun(params, context, existing: any = null) {
   const prompt = typeof params.prompt === "string" && params.prompt.trim()
     ? params.prompt
@@ -170,6 +183,13 @@ export function createAutomationTool(cronStore, {
     name: "automation",
     label: "Automation",
     description: "Create and update scheduled automation drafts. The tool returns a user-confirmable Automation card; the task is written only after the user confirms the card. Automations run as background Agent sessions.",
+    sessionPermission: {
+      describeSideEffect: (params) => {
+        if (!isDraftMutationAction(params)) return null;
+        const directlyCommits = getAutoApprove ? getAutoApprove() === true : autoApprove === true;
+        return directlyCommits ? null : automationDraftSideEffect();
+      },
+    },
     parameters: Type.Object({
       action: StringEnum(["list", "create", "update"], {
         description: "Action to perform. create and update produce a confirmation card instead of directly saving.",
