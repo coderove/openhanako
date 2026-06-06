@@ -15,9 +15,9 @@ jobs:
     if: ${{ github.event.repository.fork }}   # 仅在 fork 仓库运行
 
     steps:
-      # 1. 拉取当前 fork 仓库的代码（v4 支持 Node.js 24）
+      # 1. 拉取当前 fork 仓库的代码（v6 支持 Node.js 24）
       - name: Checkout target repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0      # 获取完整历史，以便后续合并
 
