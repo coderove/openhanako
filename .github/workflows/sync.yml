@@ -1,29 +1,50 @@
 name: Upstream Sync
 
-# 权限配置
 permissions:
   contents: write
 
-# 触发条件：定时任务（每天0点执行） + 手动触发
 on:
   schedule:
-    - cron:  '0 */3 * * *'  # 这个就是每3小时执行一次的关键设置
-  workflow_dispatch:       # 允许手动触发
+    - cron: '0 */3 * * *'   # 每3小时执行一次
+  workflow_dispatch:        # 支持手动触发
 
 jobs:
   sync_with_upstream:
     runs-on: ubuntu-latest
     name: Sync with Upstream
-    if: ${{ github.event.repository.fork }}  # 确保只在fork的仓库运行
-    steps:
-    - name: Checkout target repo
-      uses: actions/checkout@v3
+    if: ${{ github.event.repository.fork }}   # 仅在 fork 仓库运行
 
-    - name: Sync Upstream
-      uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
-      with:
-        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-        upstream_sync_repo: liliMozi/openhanako   # 替换为原始仓库路径
-        upstream_sync_branch: main                          # 原始仓库的分支
-        target_sync_branch: main                            # 你fork仓库的目标分支
-        test_mode: false
+    steps:
+      # 1. 拉取当前 fork 仓库的代码（v4 支持 Node.js 24）
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # 获取完整历史，以便后续合并
+
+      # 2. 添加上游仓库为 remote
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/liliMozi/openhanako.git
+
+      # 3. 拉取上游仓库的所有分支
+      - name: Fetch upstream
+        run: |
+          git fetch upstream
+
+      # 4. 切换到目标分支（比如 main）
+      - name: Switch to target branch
+        run: |
+          git checkout main
+
+      # 5. 合并上游分支（这里使用 merge，与原来 action 行为一致）
+      #    如果希望用 rebase，将 merge --ff-only 改为 rebase
+      - name: Merge upstream/main into main
+        run: |
+          git merge --ff-only upstream/main || true   # 如果没有冲突则快进合并
+          # 如果可能产生冲突，改为允许普通合并：
+          # git merge upstream/main --no-edit
+
+      # 6. 推送同步后的结果到 origin/main
+      - name: Push changes
+        run: |
+          git push origin main
