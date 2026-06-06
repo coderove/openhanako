@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { wrapWithCheckpoint } from "../lib/checkpoint-wrapper.ts";
 
@@ -32,7 +33,7 @@ describe("wrapWithCheckpoint", () => {
       tool: "write",
       source: "llm",
       reason: "tool-write",
-      filePath: "/project/src/foo.js",
+      filePath: path.resolve("/project", "src/foo.js"),
       maxSizeKb: 1024,
     });
     expect(writeTool.execute).toHaveBeenCalled();
@@ -54,7 +55,7 @@ describe("wrapWithCheckpoint", () => {
       tool: "edit",
       source: "llm",
       reason: "tool-edit",
-      filePath: "/absolute/bar.ts",
+      filePath: path.resolve("/absolute/bar.ts"),
       maxSizeKb: 1024,
     });
   });
@@ -75,7 +76,7 @@ describe("wrapWithCheckpoint", () => {
         tool: "bash:rm",
         source: "llm",
         reason: "tool-bash-rm",
-        filePath: "/project/src/old.js",
+        filePath: path.resolve("/project", "src/old.js"),
       }),
     );
   });
@@ -96,7 +97,7 @@ describe("wrapWithCheckpoint", () => {
         tool: "bash:mv",
         source: "llm",
         reason: "tool-bash-mv",
-        filePath: "/project/src/a.js",
+        filePath: path.resolve("/project", "src/a.js"),
       }),
     );
   });

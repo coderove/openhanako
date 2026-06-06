@@ -1,4 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+const originalPlatform = process.platform;
+
+beforeAll(() => {
+  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+});
+
+afterAll(() => {
+  Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+});
 
 vi.mock("../lib/sandbox/platform.js", () => ({
   detectPlatform: vi.fn(() => "bwrap"),

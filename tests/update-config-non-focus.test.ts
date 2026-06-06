@@ -4,6 +4,9 @@ import path from "path";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { ConfigCoordinator } from "../core/config-coordinator.ts";
 
+/** Match runtime normalizeWorkspacePath: backslash → forward slash for cross-platform persistence */
+const n = (p: string) => p.replace(/\\/g, "/");
+
 describe("updateConfig with agentId", () => {
   const tempRoots = [];
 
@@ -87,7 +90,7 @@ describe("updateConfig with agentId", () => {
     const blockedHome = path.join(os.tmpdir(), `hana-blocked-home-${Date.now()}`);
     const originalStatSync = fs.statSync;
     const statSpy = vi.spyOn(fs, "statSync").mockImplementation((target, ...args) => {
-      if (typeof target === "string" && path.normalize(target) === path.normalize(blockedHome)) {
+      if (typeof target === "string" && n(path.normalize(target)) === n(path.normalize(blockedHome))) {
         throw Object.assign(new Error("permission denied"), { code: "EACCES" });
       }
       return originalStatSync.call(fs, target, ...args);
@@ -96,8 +99,8 @@ describe("updateConfig with agentId", () => {
     targetAgent.config.desk = { home_folder: blockedHome };
     const coord = new ConfigCoordinator(deps);
 
-    expect(coord.getExplicitHomeFolder("target")).toBe(blockedHome);
-    expect(statSpy).toHaveBeenCalledWith(blockedHome);
+    expect(coord.getExplicitHomeFolder("target")).toBe(n(blockedHome));
+    expect(statSpy).toHaveBeenCalledWith(n(blockedHome));
     expect(targetAgent.updateConfig).not.toHaveBeenCalled();
   });
 
