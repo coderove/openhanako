@@ -18,8 +18,8 @@ function makeNavigableSession(manager) {
 describe("replayLatestUserTurn", () => {
   it("branches before the latest user message and replays the original prompt", async () => {
     const manager = SessionManager.inMemory("/workspace");
-    manager.appendMessage({ role: "user", content: [{ type: "text", text: "old" }] } as any);
-    manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "old answer" }] } as any);
+    const priorUserId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "old" }] } as any);
+    const priorAssistantId = manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "old answer" }] } as any);
     const latestUserId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "try again" }] } as any);
     manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "bad answer" }] } as any);
     const session = makeNavigableSession(manager);
@@ -37,7 +37,8 @@ describe("replayLatestUserTurn", () => {
       displayMessage: { text: "try again" },
     }, { submit });
 
-    expect(session.navigateTree).toHaveBeenCalledWith(latestUserId, { summarize: false });
+    expect(session.navigateTree).not.toHaveBeenCalled();
+    expect(manager.getBranch().map(entry => entry.id)).toEqual([priorUserId, priorAssistantId]);
     expect(engine.emitEvent).toHaveBeenCalledWith({
       type: "session_branch_reset",
       messageId: latestUserId,
@@ -78,6 +79,41 @@ describe("replayLatestUserTurn", () => {
       images: [{ type: "image", data: Buffer.from("png-by-filename").toString("base64"), mimeType: "image/png" }],
       imageAttachmentPaths: ["/tmp/a.png"],
       displayMessage: expect.objectContaining({ text: "new text" }),
+    }));
+  });
+
+  it("branches before the latest user when editing a leaf user message", async () => {
+    const manager = SessionManager.inMemory("/workspace");
+    const priorUserId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "context" }] } as any);
+    const priorAssistantId = manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "context answer" }] } as any);
+    const latestUserId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "old leaf text" }] } as any);
+    const session = makeNavigableSession(manager);
+    session.navigateTree = vi.fn(async (entryId) => {
+      if (entryId === manager.getLeafId?.()) return { cancelled: false };
+      const entry = manager.getEntry(entryId);
+      if (!entry) throw new Error(`Entry ${entryId} not found`);
+      if (entry.parentId) manager.branch(entry.parentId);
+      else manager.resetLeaf();
+      return { cancelled: false };
+    });
+    const submit = vi.fn(async () => ({ text: "new answer", toolMedia: [] }));
+    const engine = {
+      ensureSessionLoaded: vi.fn(async () => session),
+      isSessionStreaming: vi.fn(() => false),
+      emitEvent: vi.fn(),
+    };
+
+    await replayLatestUserTurn(engine, {
+      sessionPath: "/tmp/main.jsonl",
+      sourceEntryId: latestUserId,
+      replacementText: "new leaf text",
+      displayMessage: { text: "new leaf text" },
+    }, { submit });
+
+    expect(manager.getBranch().map(entry => entry.id)).toEqual([priorUserId, priorAssistantId]);
+    expect(submit).toHaveBeenCalledWith(engine, expect.objectContaining({
+      text: "new leaf text",
+      displayMessage: expect.objectContaining({ text: "new leaf text" }),
     }));
   });
 
