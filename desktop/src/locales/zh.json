@@ -872,12 +872,15 @@
       "title": "实验",
       "compactionTitle": "上下文压缩",
       "compactionSectionDescription": "选择 compact 时优先保护缓存，还是优先兼容历史格式。",
+      "modelPersonaTitle": "模型与人格",
+      "modelPersonaDescription": "观察不同供应商在 Hana 人格、心境和输出契约上的适配表现。",
       "memoryTitle": "缓存记忆",
       "description": "前沿能力会先放在这里观察。稳定后会迁移到它真正归属的设置页。",
       "empty": "暂无可见实验功能",
       "owner": {
         "memory": "记忆",
-        "session": "会话"
+        "session": "会话",
+        "provider": "供应商"
       },
       "status": {
         "alpha": "Alpha",
@@ -916,7 +919,17 @@
         "auto": "自动",
         "cachePreserving": "缓存保护压缩",
         "piCompatible": "普通压缩"
-      }
+      },
+      "deepseekRoleplay": {
+        "title": "DeepSeek 人格沉浸补丁",
+        "description": "打开后，新建 DeepSeek V4 思考会话会在出站请求的第一条用户消息末尾临时追加人格沉浸 marker；它不会显示、保存或恢复到聊天历史。关闭时保持旧行为。"
+      },
+      "proactiveSubagent": {
+        "title": "更积极地调用 subagent",
+        "description": "节省主聊天的上下文注意力资源，可能有更好的工作结果。开启后，agent 会主动把范围较广的探索和调研任务委派给 subagent。"
+      },
+      "subagentTitle": "Subagent",
+      "subagentSectionDescription": "控制 agent 何时将工作委派给 subagent。"
     },
     "appearance": {
       "title": "外观",
@@ -1210,6 +1223,16 @@
       "remoteServerKeyHint": "填入那台服务器设置页生成的电脑访问密钥",
       "remoteServerConnected": "已连接局域网服务器",
       "remoteServerFailed": "连接失败",
+      "remoteConnection": "当前连接的是远端 Hana",
+      "remoteConnectionDesc": "访问与设备里的本地账号、密码、局域网开关和密钥生成只属于本机 Hana。",
+      "remoteConnectionName": "连接名称",
+      "remoteConnectionKind": "连接类型",
+      "remoteConnectionUrl": "服务器地址",
+      "remoteConnectionUnknown": "未知",
+      "remoteLocalOnlyNote": "需要管理这台电脑的局域网访问、设备密钥或本地账号时，请先切回本机 Hana。",
+      "returnToLocal": "切回本机 Hana",
+      "returnedToLocal": "已切回本机 Hana",
+      "localConnectionUnavailable": "本机 Hana 连接尚未就绪",
       "pairedDevices": "已配对设备",
       "noDevices": "暂无已配对设备",
       "revoke": "撤销",
@@ -1877,6 +1900,7 @@
       "wechat": "微信",
       "wechatHint": "通过微信 iLink 协议接入个人号",
       "wechatExclusive": "一个微信号只能绑定一个 Agent，绑定新 Agent 后旧的会自动失效",
+      "wechatReplyWindowReminder": "微信主动通知依赖最近一次收到消息后的回复窗口。如果提醒没有送达，可以先给这个 Agent 发一条微信来激活窗口。",
       "wechatScan": "扫码登录",
       "wechatRescan": "重新登录",
       "wechatLoggedIn": "已登录",
@@ -2810,7 +2834,11 @@
       "submit": "登录"
     },
     "loading": "正在连接 Hana...",
-    "closeSidebar": "关闭侧边栏"
+    "closeSidebar": "关闭侧边栏",
+    "update": {
+      "available": "Hana 有新版本可用",
+      "reload": "刷新"
+    }
   },
   "approval": {
     "toolAction": {

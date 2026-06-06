@@ -11,10 +11,12 @@ import {
   COMPACTION_MODE_EXPERIMENT_ID,
   COMPACTION_MODES,
   normalizeCompactionMode,
-} from '../../../../../shared/compaction-mode.js';
+} from '../../../../../shared/compaction-mode.ts';
 import styles from '../Settings.module.css';
 
 const CACHE_SNAPSHOT_EXPERIMENT_ID = 'memory.cache_snapshot_reflection';
+const DEEPSEEK_ROLEPLAY_REASONING_PATCH_EXPERIMENT_ID = 'provider.deepseek_roleplay_reasoning_patch';
+const PROACTIVE_SUBAGENT_EXPERIMENT_ID = 'subagent.proactive_delegation';
 
 type CacheSnapshotMode = 'off' | 'shadow' | 'write';
 type CompactionMode = 'auto' | 'cache_preserving' | 'pi_compatible';
@@ -314,12 +316,52 @@ function CompactionModeExperiment({ experiment, onValueChange }: {
   );
 }
 
+function BooleanExperiment({ experiment, onValueChange }: {
+  experiment: ExperimentDefinition;
+  onValueChange: (id: string, value: boolean) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const enabled = experiment.value === true;
+  const hint = [
+    t(experiment.descriptionKey),
+    experimentHint(experiment),
+  ].filter(Boolean).join(' · ');
+
+  const setEnabled = async (next: boolean) => {
+    setSaving(true);
+    try {
+      await onValueChange(experiment.id, next);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsRow
+      label={t(experiment.titleKey)}
+      hint={hint}
+      control={(
+        <SwitchButton
+          checked={enabled}
+          disabled={saving}
+          label={t(experiment.titleKey)}
+          onClick={() => setEnabled(!enabled)}
+        />
+      )}
+    />
+  );
+}
+
 export function ExperimentsTab() {
   const showToast = useSettingsStore(s => s.showToast);
   const platformName = useSettingsStore(s => s.platformName);
   const [experiments, setExperiments] = useState<ExperimentDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const sessionExperiments = experiments.filter((experiment) => experiment.owner === 'session');
+  const providerExperiments = experiments.filter((experiment) => (
+    experiment.owner === 'provider'
+    && experiment.id === DEEPSEEK_ROLEPLAY_REASONING_PATCH_EXPERIMENT_ID
+  ));
   const memoryExperiments = experiments.filter((experiment) => experiment.owner === 'memory');
   const showComputerUse = platformName !== 'linux';
 
@@ -356,6 +398,38 @@ export function ExperimentsTab() {
           {sessionExperiments.map((experiment) => (
             experiment.id === COMPACTION_MODE_EXPERIMENT_ID ? (
               <CompactionModeExperiment
+                key={experiment.id}
+                experiment={experiment}
+                onValueChange={updateExperimentValue}
+              />
+            ) : null
+          ))}
+        </SettingsSection>
+      )}
+      {!loading && sessionExperiments.some(e => e.id === PROACTIVE_SUBAGENT_EXPERIMENT_ID) && (
+        <SettingsSection
+          title={t('settings.experiments.subagentTitle')}
+          description={t('settings.experiments.subagentSectionDescription')}
+        >
+          {sessionExperiments.map((experiment) => (
+            experiment.id === PROACTIVE_SUBAGENT_EXPERIMENT_ID ? (
+              <BooleanExperiment
+                key={experiment.id}
+                experiment={experiment}
+                onValueChange={updateExperimentValue}
+              />
+            ) : null
+          ))}
+        </SettingsSection>
+      )}
+      {!loading && providerExperiments.length > 0 && (
+        <SettingsSection
+          title={t('settings.experiments.modelPersonaTitle')}
+          description={t('settings.experiments.modelPersonaDescription')}
+        >
+          {providerExperiments.map((experiment) => (
+            experiment.id === DEEPSEEK_ROLEPLAY_REASONING_PATCH_EXPERIMENT_ID ? (
+              <BooleanExperiment
                 key={experiment.id}
                 experiment={experiment}
                 onValueChange={updateExperimentValue}

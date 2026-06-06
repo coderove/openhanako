@@ -4,7 +4,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COVER_GALLERY_PRESETS } from '../../../../../shared/cover-gallery-presets.js';
+import { COVER_GALLERY_PRESETS } from '../../../../../shared/cover-gallery-presets.ts';
 import { COVER_GALLERY_ITEMS } from '../../components/preview/cover-gallery-assets';
 import { FloatingActions } from '../../components/preview/FloatingActions';
 import { useStore, type StoreState } from '../../stores';
@@ -144,6 +144,17 @@ describe('FloatingActions cover gallery', () => {
     expect(screen.getByRole('button', { name: 'cover.agentGenerate.label' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'cover.gallery.title' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'cover.gallery.upload' })).toBeEnabled();
+  });
+
+  it('hides upload cover when the runtime has no file picker capability', async () => {
+    window.platform = {} as unknown as PlatformApi;
+
+    render(<FloatingActions content="# Demo\n" filePath="/tmp/note.md" contentType="markdown" />);
+
+    await waitFor(() => expect(screen.getByLabelText('cover.make')).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText('cover.make'));
+
+    expect(screen.queryByRole('button', { name: 'cover.gallery.upload' })).not.toBeInTheDocument();
   });
 
   it('refreshes markdown preview toggle i18n after locale sync', async () => {
