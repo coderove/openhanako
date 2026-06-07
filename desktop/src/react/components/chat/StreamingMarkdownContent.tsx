@@ -26,6 +26,14 @@ function cx(...parts: Array<string | false | null | undefined>): string | undefi
   return value || undefined;
 }
 
+function splitPlainTextParagraphs(text: string): string[] {
+  const paragraphs = text
+    .replace(/\r\n?/g, '\n')
+    .split(/\n{2,}/)
+    .filter(paragraph => paragraph.length > 0);
+  return paragraphs.length > 0 ? paragraphs : [''];
+}
+
 export function isTypewriterEligibleMarkdownSource(source: string): boolean {
   if (!source.trim()) return false;
   if (BACKTICK_SENSITIVE_MARKDOWN.test(source)) return false;
@@ -53,7 +61,9 @@ export const StreamingMarkdownContent = memo(function StreamingMarkdownContent({
         className={cx('md-content', styles.streamPlainText, className)}
         data-stream-plain-text="true"
       >
-        {visiblePlainText}
+        {splitPlainTextParagraphs(visiblePlainText).map((paragraph, index) => (
+          <p key={index}>{paragraph}</p>
+        ))}
       </div>
     );
   }

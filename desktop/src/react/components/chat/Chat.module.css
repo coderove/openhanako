@@ -442,7 +442,7 @@
 }
 
 .streamPlainText {
-    white-space: pre-wrap;
+    white-space: normal;
 }
 
 .streamMarkdownBlockEnter {

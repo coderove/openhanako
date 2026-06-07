@@ -23,7 +23,7 @@ describe('StreamingMarkdownContent', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders active prose through a stable plain text node instead of rebuilding markdown html', () => {
+  it('renders active prose through stable markdown-like paragraphs instead of rebuilding markdown html', () => {
     const { container, rerender } = render(
       <StreamingMarkdownContent source="旧正文" html="<p>旧正文</p>" active />,
     );
@@ -32,7 +32,7 @@ describe('StreamingMarkdownContent', () => {
     const root = container.querySelector('.md-content');
     expect(root).not.toBeNull();
     expect(root?.getAttribute('data-stream-plain-text')).toBe('true');
-    expect(root?.querySelector('p')).toBeNull();
+    expect(root?.querySelector('p')?.textContent).toBe('旧正文');
     expect(root?.querySelector('[data-stream-tail-chunk="true"]')).toBeNull();
 
     rerender(
@@ -40,9 +40,21 @@ describe('StreamingMarkdownContent', () => {
     );
 
     expect(container.querySelector('.md-content')).toBe(root);
-    expect(container.querySelector('p')).toBeNull();
+    expect(container.querySelector('p')?.textContent).toBe('旧正文');
     expect(container.querySelector('[data-stream-tail-chunk="true"]')).toBeNull();
     expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+  });
+
+  it('matches final markdown paragraph structure while prose is streaming', () => {
+    const source = '第一段。\n\n第二段。';
+    const html = '<p>第一段。</p>\n<p>第二段。</p>';
+
+    const { container } = render(
+      <StreamingMarkdownContent source={source} html={html} active />,
+    );
+
+    const paragraphs = Array.from(container.querySelectorAll('.md-content > p'));
+    expect(paragraphs.map(p => p.textContent)).toEqual(['第一段。', '第二段。']);
   });
 
   it('advances small prose backlogs on the 30Hz stream clock', () => {
