@@ -4,26 +4,43 @@ name: Upstream Sync
 permissions:
   contents: write
 
-# 触发条件：定时任务（每天0点执行） + 手动触发
+# 触发条件：定时任务（每3小时执行一次） + 手动触发
 on:
   schedule:
-    - cron:  '0 */3 * * *'   # 每3小时执行一次
-  workflow_dispatch:       # 允许手动触发
+    - cron: '0 */3 * * *'   # 每3小时执行一次
+  workflow_dispatch:        # 允许手动触发
 
 jobs:
   sync_with_upstream:
     runs-on: ubuntu-latest
     name: Sync with Upstream
-    if: ${{ github.event.repository.fork }}  # 确保只在fork的仓库运行
+    # 确保只在 fork 的仓库运行
+    if: ${{ github.event.repository.fork }} 
+    
     steps:
-    - name: Checkout target repo
-      uses: actions/checkout@v6
+      - name: Checkout target repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0    # 必须获取完整历史记录，否则合并可能报错
 
-    - name: Sync Upstream
-      uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
-      with:
-        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-        upstream_sync_repo: liliMozi/openhanako   # 替换为原始仓库路径
-        upstream_sync_branch: main                          # 原始仓库的分支
-        target_sync_branch: main                            # 你fork仓库的目标分支
-        test_mode: false
+      - name: Sync Upstream via Native Git
+        run: |
+          # 配置提交者信息
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+          # 添加上游仓库（使用 || true 防止重复添加报错）
+          git remote add upstream https://github.com/liliMozi/openhanako.git || true
+          
+          # 拉取上游最新代码
+          git fetch upstream
+          
+          # 合并上游 main 分支到本地 main 分支
+          # 使用 --allow-unrelated-histories 防止因历史不同导致的拒绝合并
+          # 使用 || true 确保在没有新更新或发生冲突时，流水线不会中断报错
+          git merge upstream/main --allow-unrelated-histories -m "Sync upstream changes" || true
+          
+          # 将同步后的代码推送到你的 Fork 仓库
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
