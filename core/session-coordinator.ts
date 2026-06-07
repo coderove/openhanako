@@ -2068,15 +2068,66 @@ export class SessionCoordinator {
     return { ok: true, mode: "file" };
   }
 
+  _cleanupAbortedSessionSidecars(sessionPath: any, reason: any) {
+    if (!sessionPath) return;
+    const shortPath = path.basename(sessionPath);
+    const taskRegistry = this._d.getTaskRegistry?.() || this._d.taskRegistry || this._d.getEngine?.()?.taskRegistry;
+    const subagentRuns = this._d.getSubagentRunStore?.() || this._d.subagentRuns || this._d.getEngine?.()?.subagentRuns;
+    const subagentThreads = this._d.getSubagentThreadStore?.() || this._d.subagentThreads || this._d.getEngine?.()?.subagentThreads;
+    const deferredResults = this._d.getDeferredResultStore?.() || this._d.deferredResults || this._d.getEngine?.()?.deferredResults;
+    const confirmStore = this._d.getConfirmStore?.() || this._d.confirmStore || this._d.getEngine?.()?.confirmStore;
+
+    try {
+      taskRegistry?.abortByParentSession?.(sessionPath, reason);
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: task cleanup failed: ${err.message}`);
+    }
+    try {
+      subagentRuns?.abortByParentSession?.(sessionPath, reason);
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: subagent run cleanup failed: ${err.message}`);
+    }
+    try {
+      subagentThreads?.removeBySession?.(sessionPath);
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: subagent thread cleanup failed: ${err.message}`);
+    }
+    try {
+      deferredResults?.suppressBySession?.(sessionPath, reason);
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: deferred cleanup failed: ${err.message}`);
+    }
+    try {
+      confirmStore?.abortBySession?.(sessionPath);
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: confirm cleanup failed: ${err.message}`);
+    }
+    try {
+      this._d.closeTerminalsForSession?.(sessionPath);
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: terminal cleanup failed: ${err.message}`);
+    }
+    try {
+      const closeBrowser = BrowserManager.instance().closeBrowserForSession(sessionPath);
+      Promise.resolve(closeBrowser).catch((err) =>
+        log.warn(`abort cleanup ${shortPath}: browser cleanup failed: ${err.message}`),
+      );
+    } catch (err) {
+      log.warn(`abort cleanup ${shortPath}: browser cleanup failed: ${err.message}`);
+    }
+  }
+
   async abortSession(sessionPath: any) {
     const pending = this._prePromptAbortControllers.get(sessionPath);
     if (pending) {
       pending.abort();
       this._prePromptAbortControllers.delete(sessionPath);
+      this._cleanupAbortedSessionSidecars(sessionPath, "abort");
       return true;
     }
     const entry = this._sessions.get(sessionPath);
     if (!entry?.session.isStreaming) return false;
+    this._cleanupAbortedSessionSidecars(sessionPath, "abort");
     return this._forceReleaseStreamingSession(entry, sessionPath, "abort");
   }
 
@@ -2483,6 +2534,7 @@ export class SessionCoordinator {
     let count = 0;
     for (const [sp, entry] of this._sessions) {
       if (entry.session.isStreaming) {
+        this._cleanupAbortedSessionSidecars(sp, "abort_all");
         if (this._forceReleaseStreamingSession(entry, sp, "abort_all")) count++;
       }
     }

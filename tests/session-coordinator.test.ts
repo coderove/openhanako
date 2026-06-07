@@ -3013,6 +3013,77 @@ describe("SessionCoordinator", () => {
     );
   });
 
+  it("aborts session-owned sidecars when the user cancels a streaming session", async () => {
+    const sessionFile = path.join(tempDir, "cancel-sidecars.jsonl");
+    const taskRegistry = { abortByParentSession: vi.fn() };
+    const subagentRuns = { abortByParentSession: vi.fn() };
+    const subagentThreads = { removeBySession: vi.fn() };
+    const deferredStore = { suppressBySession: vi.fn() };
+    const confirmStore = { abortBySession: vi.fn() };
+    const closeTerminalsForSession = vi.fn();
+    const closeBrowserForSession = vi.fn(async () => undefined);
+    const browserSpy = vi.spyOn(BrowserManager, "instance").mockReturnValue({
+      closeBrowserForSession,
+    } as any);
+    const stuckSession = {
+      isStreaming: true,
+      sessionManager: { getSessionFile: () => sessionFile },
+      abort: vi.fn(),
+      dispose: vi.fn(),
+      extensionRunner: null,
+    };
+    const coordinator = new SessionCoordinator({
+      agentsDir: tempDir,
+      getAgent: () => ({
+        id: "hana",
+        agentDir: tempDir,
+        sessionDir: tempDir,
+        _memoryTicker: { notifySessionEnd: vi.fn(() => Promise.resolve()) },
+      }),
+      getActiveAgentId: () => "hana",
+      getModels: () => ({ authStorage: {}, modelRegistry: {}, resolveThinkingLevel: () => "medium" }),
+      getResourceLoader: () => ({ getSystemPrompt: () => "prompt" }),
+      getSkills: () => null,
+      buildTools: () => ({ tools: [], customTools: [] }),
+      emitEvent: vi.fn(),
+      getHomeCwd: () => tempDir,
+      agentIdFromSessionPath: () => "hana",
+      switchAgentOnly: async () => {},
+      getConfig: () => ({}),
+      getPrefs: () => ({ getThinkingLevel: () => "medium" }),
+      getAgents: () => new Map(),
+      getActivityStore: () => null,
+      getAgentById: () => null,
+      listAgents: () => [],
+      taskRegistry,
+      subagentRuns,
+      subagentThreads,
+      getDeferredResultStore: () => deferredStore,
+      getConfirmStore: () => confirmStore,
+      closeTerminalsForSession,
+    });
+    coordinator.sessions.set(sessionFile, {
+      session: stuckSession,
+      agentId: "hana",
+      lastTouchedAt: Date.now(),
+      unsub: vi.fn(),
+    });
+
+    try {
+      await coordinator.abortSession(sessionFile);
+
+      expect(taskRegistry.abortByParentSession).toHaveBeenCalledWith(sessionFile, "abort");
+      expect(subagentRuns.abortByParentSession).toHaveBeenCalledWith(sessionFile, "abort");
+      expect(subagentThreads.removeBySession).toHaveBeenCalledWith(sessionFile);
+      expect(deferredStore.suppressBySession).toHaveBeenCalledWith(sessionFile, "abort");
+      expect(confirmStore.abortBySession).toHaveBeenCalledWith(sessionFile);
+      expect(closeTerminalsForSession).toHaveBeenCalledWith(sessionFile);
+      expect(closeBrowserForSession).toHaveBeenCalledWith(sessionFile);
+    } finally {
+      browserSpy.mockRestore();
+    }
+  });
+
   it("executeIsolated builds non-session tools from the master memory switch, not the focused session switch", async () => {
     const sessionFile = path.join(tempDir, "isolated-master-tools.jsonl");
     const builtinTool = { name: "read" };
