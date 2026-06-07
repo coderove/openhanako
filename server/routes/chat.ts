@@ -8,7 +8,13 @@ import { Hono } from "hono";
 import { MoodParser, ThinkTagParser, CardParser } from "../../core/events.ts";
 import { extractBlocks } from "../block-extractors.ts";
 import { toAppEventWsMessage } from "../app-events.ts";
-import { wsSend, wsParse, wsSendSerialized } from "../ws-protocol.ts";
+import {
+  createSessionStreamEventWsMessage,
+  createStreamResumeWsMessage,
+  wsSend,
+  wsParse,
+  wsSendSerialized,
+} from "../ws-protocol.ts";
 import { debugLog, createModuleLogger } from "../../lib/debug-log.ts";
 import { t } from "../../lib/i18n.ts";
 import { getLastAssistantUsage } from "../../lib/pi-sdk/index.ts";
@@ -26,6 +32,7 @@ import { AppError } from "../../shared/errors.ts";
 import { errorBus } from "../../shared/error-bus.ts";
 import { createRequestContext } from "../http/boundary.ts";
 import { buildDeferredResultInterludeBlock, resolveDeferredReceiverName } from "../deferred-result-interlude.ts";
+import { buildAutomationSuggestionBlock } from "../suggestion-blocks.ts";
 import { isAllowedChatImageMime, isChatImageBase64WithinLimit } from "../../shared/image-mime.ts";
 import { isAllowedChatVideoMime, isChatVideoBase64WithinLimit } from "../../shared/video-mime.ts";
 import { isAllowedChatAudioMime, isChatAudioBase64WithinLimit } from "../../shared/audio-mime.ts";
@@ -173,11 +180,19 @@ export function toAgentActivityWsMessage(event: any, sessionPath: any) {
 }
 
 export const DEFAULT_DISCONNECT_ABORT_GRACE_MS = 5 * 60_000;
+export const DEFAULT_TURN_STALL_ABORT_MS = 20 * 60_000;
 
 export function resolveDisconnectAbortGraceMs(value = process.env.HANA_WS_DISCONNECT_ABORT_GRACE_MS) {
   if (value === undefined || value === null || value === "") return DEFAULT_DISCONNECT_ABORT_GRACE_MS;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_DISCONNECT_ABORT_GRACE_MS;
+  return Math.floor(parsed);
+}
+
+export function resolveTurnStallAbortMs(value = process.env.HANA_TURN_STALL_ABORT_MS) {
+  if (value === undefined || value === null || value === "") return DEFAULT_TURN_STALL_ABORT_MS;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_TURN_STALL_ABORT_MS;
   return Math.floor(parsed);
 }
 
@@ -188,6 +203,7 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
   let activeWsClients = 0;
   let disconnectAbortTimer = null;
   const disconnectAbortGraceMs = resolveDisconnectAbortGraceMs();
+  const turnStallAbortMs = resolveTurnStallAbortMs();
   const sessionState = new Map(); // sessionPath -> shared stream state
 
   function cancelDisconnectAbort() {
@@ -262,6 +278,9 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
         titleRequested: false,
         titlePreview: "",
         pendingDeferredContentEvents: [],
+        pendingTurnCompletionNotification: null,
+        turnStallTimer: null,
+        lastStreamActivityAt: 0,
         lastAccessed: Date.now(),
         ...createSessionStreamState(),
       });
@@ -369,12 +388,12 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
   function emitStreamEvent(sessionPath, ss, event) {
     const entry = appendSessionStreamEvent(ss, event);
     // Phase 4: 始终广播所有事件，前端按 sessionPath 路由到对应 panel
-    broadcast({
-      ...event,
+    broadcast(createSessionStreamEventWsMessage({
       sessionPath,
+      sessionEvent: event,
       streamId: entry.streamId,
       seq: entry.seq,
-    });
+    }));
     return entry;
   }
 
@@ -422,10 +441,46 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
   function finishStreamingState(ss) {
     if (!ss) return;
     ss.turnActive = false;
+    clearTurnStallWatchdog(ss);
     if (ss.isStreaming) finishSessionStream(ss);
     ss.thinkTagParser.reset();
     ss.moodParser.reset();
     ss.cardParser.reset();
+  }
+
+  function clearTurnStallWatchdog(ss) {
+    if (!ss?.turnStallTimer) return;
+    clearTimeout(ss.turnStallTimer);
+    ss.turnStallTimer = null;
+  }
+
+  function scheduleTurnStallWatchdog(sessionPath, ss) {
+    if (!sessionPath || !ss || turnStallAbortMs === 0) return;
+    clearTurnStallWatchdog(ss);
+    const lastActivity = ss.lastStreamActivityAt || Date.now();
+    const delay = Math.max(0, turnStallAbortMs - (Date.now() - lastActivity));
+    ss.turnStallTimer = setTimeout(() => {
+      ss.turnStallTimer = null;
+      const idleFor = Date.now() - (ss.lastStreamActivityAt || 0);
+      if (idleFor < turnStallAbortMs) {
+        scheduleTurnStallWatchdog(sessionPath, ss);
+        return;
+      }
+      if (!isSessionRuntimeStreaming(sessionPath)) return;
+      ss.isAborted = true;
+      Promise.resolve(hub.abort?.(sessionPath)).then((aborted) => {
+        if (aborted === false) return engine.abortSessionByPath?.(sessionPath);
+      }).catch((err) => {
+        log.warn(`turn stall abort failed for ${path.basename(sessionPath)}: ${err.message}`);
+      });
+    }, delay);
+    ss.turnStallTimer.unref?.();
+  }
+
+  function markTurnStreamActivity(sessionPath, ss) {
+    if (!sessionPath || !ss || !isSessionRuntimeStreaming(sessionPath)) return;
+    ss.lastStreamActivityAt = Date.now();
+    scheduleTurnStallWatchdog(sessionPath, ss);
   }
 
   function maybeGenerateFirstTurnTitle(sessionPath, ss) {
@@ -499,6 +554,37 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
     }
   }
 
+  function isSessionRuntimeStreaming(sessionPath) {
+    try {
+      return engine.isSessionStreaming?.(sessionPath) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function deliverOrDeferTurnCompletionNotification(sessionPath, ss, details) {
+    if (!ss) {
+      maybeDeliverTurnCompletionNotification(sessionPath, details);
+      return;
+    }
+    if (isSessionRuntimeStreaming(sessionPath)) {
+      ss.pendingTurnCompletionNotification = details;
+      return;
+    }
+    ss.pendingTurnCompletionNotification = null;
+    maybeDeliverTurnCompletionNotification(sessionPath, details);
+  }
+
+  function flushPendingTurnCompletionNotification(sessionPath, ss) {
+    const pending = ss?.pendingTurnCompletionNotification;
+    if (!pending || isSessionRuntimeStreaming(sessionPath)) return;
+    ss.pendingTurnCompletionNotification = null;
+    maybeDeliverTurnCompletionNotification(sessionPath, {
+      ...pending,
+      wasAborted: pending.wasAborted || ss.isAborted === true,
+    });
+  }
+
   // 单订阅：事件只写入一次，再按需广播到所有连接中的客户端。
   hub.subscribe((event, sessionPath) => {
     // Non-session-scoped events: handle before session resolution
@@ -524,6 +610,9 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
     }
 
     const ss = sessionPath ? getState(sessionPath) : null;
+    if (ss && event.type !== "session_status") {
+      markTurnStreamActivity(sessionPath, ss);
+    }
 
     // Helper: feed CardParser, emit card events or pass text through as text_delta
     const feedCardPipeline = (text) => {
@@ -696,11 +785,16 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
         block: event.request,
       });
     } else if (event.type === "cron_confirmation" && event.confirmId) {
-      // 新的阻塞式 cron 确认（通过 emitEvent 触发）
+      // 新的阻塞式自动化建议（通过 emitEvent 触发）
       if (!ss) return;
       emitStreamEvent(sessionPath, ss, {
         type: "content_block",
-        block: { type: "cron_confirm", confirmId: event.confirmId, jobData: event.jobData, status: "pending" },
+        block: buildAutomationSuggestionBlock({
+          confirmId: event.confirmId,
+          jobData: event.jobData || {},
+          operation: event.operation === "update" ? "update" : "create",
+          status: "pending",
+        }),
       });
     } else if (event.type === "settings_confirmation") {
       if (!ss) return;
@@ -778,6 +872,8 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
       if (ss) {
         if (event.isStreaming) {
           flushPendingDeferredContentEvents(sessionPath, ss);
+          ss.pendingTurnCompletionNotification = null;
+          ss.lastStreamActivityAt = Date.now();
           ss.turnActive = true;
           ss.thinkTagParser.reset();
           ss.moodParser.reset();
@@ -793,15 +889,18 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
           ss.titleRequested = false;
           ss.titlePreview = "";
           beginSessionStream(ss);
+          scheduleTurnStallWatchdog(sessionPath, ss);
         } else if (ss.isStreaming) {
           finishStreamingState(ss);
         } else {
           ss.turnActive = false;
+          clearTurnStallWatchdog(ss);
         }
       }
       broadcast({ type: "status", isStreaming: !!event.isStreaming, sessionPath });
       if (ss && !event.isStreaming) {
         flushPendingDeferredContentEvents(sessionPath, ss);
+        flushPendingTurnCompletionNotification(sessionPath, ss);
       }
     } else if (event.type === "bridge_rc_attached") {
       broadcast({
@@ -959,13 +1058,16 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
       } catch (_) { /* 统计失败不阻塞主流程 */ }
 
       emitStreamEvent(sessionPath, ss, { type: "turn_end" });
-      maybeDeliverTurnCompletionNotification(sessionPath, {
+      finishSessionStream(ss);
+      ss.turnActive = false;
+      if (!isSessionRuntimeStreaming(sessionPath)) {
+        clearTurnStallWatchdog(ss);
+      }
+      deliverOrDeferTurnCompletionNotification(sessionPath, ss, {
         wasAborted: turnWasAborted,
         wasSuccessful: turnWasSuccessful,
         streamId: turnStreamId,
       });
-      finishSessionStream(ss);
-      ss.turnActive = false;
       ss.hasOutput = false;
       ss.hasToolCall = false;
       ss.hasThinking = false;
@@ -1084,13 +1186,15 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
             if (msg.type === "resume_stream") {
               const currentPath = requireSessionPath(msg, ws); if (!currentPath) return;
               const ss = sessionState.get(currentPath);
+              const runtimeIsStreaming = typeof engine.isSessionStreaming === "function"
+                ? !!engine.isSessionStreaming(currentPath)
+                : !!ss?.isStreaming;
               if (ss) {
                 const resumed = resumeSessionStream(ss, {
                   streamId: msg.streamId,
                   sinceSeq: msg.sinceSeq,
                 });
-                wsSend(ws, {
-                  type: "stream_resume",
+                wsSend(ws, createStreamResumeWsMessage({
                   sessionPath: currentPath,
                   streamId: resumed.streamId,
                   sinceSeq: resumed.sinceSeq,
@@ -1098,20 +1202,21 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
                   reset: resumed.reset,
                   truncated: resumed.truncated,
                   isStreaming: resumed.isStreaming,
+                  runtimeIsStreaming,
                   events: resumed.events,
-                });
+                }));
               } else {
-                wsSend(ws, {
-                  type: "stream_resume",
+                wsSend(ws, createStreamResumeWsMessage({
                   sessionPath: currentPath,
                   streamId: null,
-                  sinceSeq: Number.isFinite(msg.sinceSeq) ? Math.max(0, msg.sinceSeq) : 0,
+                  sinceSeq: Number.isFinite(msg.sinceSeq) ? Math.max(0, Math.floor(msg.sinceSeq)) : 0,
                   nextSeq: 1,
                   reset: false,
                   truncated: false,
                   isStreaming: false,
+                  runtimeIsStreaming,
                   events: [],
-                });
+                }));
               }
               return;
             }

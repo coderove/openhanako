@@ -39,8 +39,9 @@ function buildToolApprovalRequest(confirmId: any, toolName: any, params: any) {
   };
 }
 
-function buildToolApprovalGatewayRequest(toolName: any, params: any, sessionPath: any) {
+function buildToolApprovalGatewayRequest(tool: any, toolName: any, params: any, sessionPath: any) {
   const target = approvalTargetForTool(toolName, params);
+  const sideEffect = approvalSideEffectForTool(tool, params);
   return {
     id: `${sessionPath || "session"}:${toolName}:${Date.now()}`,
     kind: "tool_action",
@@ -52,6 +53,7 @@ function buildToolApprovalGatewayRequest(toolName: any, params: any, sessionPath
     target,
     blastRadius: target.type === "url" || target.type === "domain" ? "external" : "workspace",
     reversibility: toolName === "bash" || toolName === "terminal" ? "unknown" : "moderate",
+    ...(sideEffect ? { sideEffect } : {}),
   };
 }
 
@@ -66,6 +68,13 @@ function approvalTargetForTool(toolName: any, params: any = {}) {
     ? params.label.trim()
     : toolName;
   return { type: "tool", label };
+}
+
+function approvalSideEffectForTool(tool: any, params: any) {
+  const describe = tool?.sessionPermission?.describeSideEffect;
+  if (typeof describe !== "function") return null;
+  const sideEffect = describe(params);
+  return sideEffect && typeof sideEffect === "object" ? sideEffect : null;
 }
 
 function summarizeParams(params: any) {
@@ -108,7 +117,7 @@ async function askForToolApproval(toolName: any, params: any, sessionPath: any, 
   };
 }
 
-async function reviewToolApproval(toolName: any, params: any, sessionPath: any, deps: any) {
+async function reviewToolApproval(tool: any, toolName: any, params: any, sessionPath: any, deps: any) {
   const gateway = deps.getApprovalGateway?.() || deps.approvalGateway || null;
   if (!gateway || typeof gateway.review !== "function") {
     return {
@@ -117,7 +126,7 @@ async function reviewToolApproval(toolName: any, params: any, sessionPath: any, 
       reason: "approval-gateway-unavailable",
     };
   }
-  const request = buildToolApprovalGatewayRequest(toolName, params, sessionPath);
+  const request = buildToolApprovalGatewayRequest(tool, toolName, params, sessionPath);
   const decision = await gateway.review(request, {
     sessionPath,
     permissionContext: deps.permissionContext || null,
@@ -144,6 +153,19 @@ function resolveToolPermissionMode(deps: any, sessionPath: any) {
   return normalizeSessionPermissionMode(raw);
 }
 
+function toolApprovalUnavailable(toolName: any, status = "rejected", reason = "human approval disabled") {
+  return toolOk("Tool action was not approved.", {
+    action: toolName,
+    confirmed: false,
+    confirmation: {
+      kind: "tool_action_approval",
+      status,
+      toolName,
+      reason,
+    },
+  });
+}
+
 export function wrapWithSessionPermission(tools: any[] = [], deps: any = {}) {
   return tools.map((tool: any) => {
     if (!tool?.execute || tool._sessionPermissionWrapped) return tool;
@@ -168,7 +190,7 @@ export function wrapWithSessionPermission(tools: any[] = [], deps: any = {}) {
           });
         }
         if (decision.action === "review") {
-          const review = await reviewToolApproval(tool.name, params, sessionPath, deps);
+          const review = await reviewToolApproval(tool, tool.name, params, sessionPath, deps);
           if (review.allowed) {
             return tool.execute(...args);
           }
@@ -186,8 +208,14 @@ export function wrapWithSessionPermission(tools: any[] = [], deps: any = {}) {
               },
             });
           }
+          if (deps.allowHumanApproval === false) {
+            return toolApprovalUnavailable(tool.name, "ask_user", review.reason || "human approval disabled");
+          }
         }
 
+        if (deps.allowHumanApproval === false) {
+          return toolApprovalUnavailable(tool.name);
+        }
         const approval = await askForToolApproval(tool.name, params, sessionPath, deps);
         if (!approval.allowed) {
           return toolOk("Tool action was not approved.", {

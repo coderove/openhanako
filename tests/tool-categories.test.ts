@@ -31,8 +31,18 @@ describe("tool-categories constants", () => {
 
   it("OPTIONAL_TOOL_NAMES is exactly the user-toggleable whitelist", () => {
     expect(new Set(OPTIONAL_TOOL_NAMES)).toEqual(
-      new Set(["automation", "beautify", "browser", "cron", "dm", "install_skill", "update_settings", "workflow"])
+      new Set(["automation", "beautify", "browser", "dm", "install_skill", "office", "update_settings", "workflow"])
     );
+  });
+
+  it("does not keep the removed legacy cron Agent tool in any category", () => {
+    const all = new Set([
+      ...CORE_TOOL_NAMES,
+      ...STANDARD_TOOL_NAMES,
+      ...GLOBAL_TOOL_NAMES,
+      ...OPTIONAL_TOOL_NAMES,
+    ]);
+    expect(all.has("cron")).toBe(false);
   });
 
   it("GLOBAL_TOOL_NAMES is exactly the global setting governed whitelist", () => {
@@ -67,15 +77,15 @@ describe("assertAllToolsCategorized", () => {
 describe("computeSettingsAvailableToolNames", () => {
   it("adds built-in optional tool categories to runtime tool names", () => {
     expect(computeSettingsAvailableToolNames(["current_status"], {
-      pluginTools: [{ _pluginId: "beautify" }],
+      pluginTools: [{ _pluginId: "beautify" }, { _pluginId: "office" }],
     })).toEqual(expect.arrayContaining([
       "current_status",
       "automation",
       "beautify",
       "browser",
-      "cron",
       "dm",
       "install_skill",
+      "office",
       "update_settings",
     ]));
   });
@@ -85,11 +95,12 @@ describe("computeSettingsAvailableToolNames", () => {
 
     expect(result).toContain("browser");
     expect(result).not.toContain("beautify");
+    expect(result).not.toContain("office");
   });
 });
 
 describe("computeToolSnapshot", () => {
-  const allNames = ["read", "bash", "browser", "cron", "todo_write", "web_fetch"];
+  const allNames = ["read", "bash", "browser", "automation", "todo_write", "web_fetch"];
 
   it("returns all names when disabled is empty", () => {
     expect(computeToolSnapshot(allNames, [])).toEqual(allNames);
@@ -97,7 +108,7 @@ describe("computeToolSnapshot", () => {
 
   it("removes optional tools that are in disabled list", () => {
     expect(computeToolSnapshot(allNames, ["browser"])).toEqual(
-      ["read", "bash", "cron", "todo_write", "web_fetch"]
+      ["read", "bash", "automation", "todo_write", "web_fetch"]
     );
   });
 

@@ -6,6 +6,12 @@ export const SESSION_PERMISSION_MODES = Object.freeze({
 });
 
 export const DEFAULT_SESSION_PERMISSION_MODE = SESSION_PERMISSION_MODES.ASK;
+const BRIDGE_PERMISSION_MODE_VALUES = new Set([
+  SESSION_PERMISSION_MODES.AUTO,
+  SESSION_PERMISSION_MODES.OPERATE,
+  SESSION_PERMISSION_MODES.READ_ONLY,
+]);
+const AUTOMATION_PERMISSION_MODE_VALUES = BRIDGE_PERMISSION_MODE_VALUES;
 
 const INFORMATION_TOOLS = new Set([
   "read",
@@ -24,6 +30,7 @@ const SIDE_EFFECT_TOOLS = new Set([
   "write",
   "edit",
   "computer",
+  "automation",
   "cron",
   "dm",
   "channel",
@@ -55,6 +62,7 @@ const SUBAGENT_BLOCKED_TOOLS = new Set([
   "unpin_memory",
   "record_experience",
   // ③ agent 生命周期 / 对外副作用
+  "automation",
   "cron",
   "channel",
   "dm",
@@ -80,6 +88,10 @@ const TERMINAL_READ_ACTIONS = new Set([
   "list",
 ]);
 
+const FILE_READ_ACTIONS = new Set([
+  "stat",
+]);
+
 export function normalizeSessionPermissionMode(raw) {
   if (typeof raw === "string") return normalizeSessionPermissionMode({ permissionMode: raw });
   if (raw?.permissionMode === SESSION_PERMISSION_MODES.AUTO) return SESSION_PERMISSION_MODES.AUTO;
@@ -90,6 +102,19 @@ export function normalizeSessionPermissionMode(raw) {
   if (raw?.accessMode === "read_only") return SESSION_PERMISSION_MODES.READ_ONLY;
   if (raw?.planMode === true) return SESSION_PERMISSION_MODES.READ_ONLY;
   return DEFAULT_SESSION_PERMISSION_MODE;
+}
+
+export function normalizeBridgePermissionMode(raw) {
+  const source = typeof raw === "string" ? raw : raw?.permissionMode;
+  if (BRIDGE_PERMISSION_MODE_VALUES.has(source)) return source;
+  if (raw?.readOnly === true) return SESSION_PERMISSION_MODES.READ_ONLY;
+  return SESSION_PERMISSION_MODES.AUTO;
+}
+
+export function normalizeAutomationPermissionMode(raw) {
+  const source = typeof raw === "string" ? raw : raw?.permissionMode;
+  if (AUTOMATION_PERMISSION_MODE_VALUES.has(source)) return source;
+  return SESSION_PERMISSION_MODES.AUTO;
 }
 
 export function legacyAccessModeFromPermissionMode(mode) {
@@ -147,6 +172,14 @@ function classifySessionFoldersAction(mode, action) {
   return { action: "allow" };
 }
 
+function classifyFileAction(mode, action) {
+  if (FILE_READ_ACTIONS.has(action)) return { action: "allow" };
+  if (mode === SESSION_PERMISSION_MODES.READ_ONLY) return blocked("file");
+  if (mode === SESSION_PERMISSION_MODES.AUTO) return review("file");
+  if (mode === SESSION_PERMISSION_MODES.ASK) return prompt("file");
+  return { action: "allow" };
+}
+
 export function classifySessionPermission({ mode, toolName, params, context }: { mode?: any; toolName?: any; params?: any; context?: any } = {}) {
   let normalized = normalizeSessionPermissionMode(mode);
   const name = typeof toolName === "string" ? toolName : "";
@@ -168,6 +201,7 @@ export function classifySessionPermission({ mode, toolName, params, context }: {
   if (name === "browser") return classifyBrowserAction(normalized, params?.action);
   if (name === "terminal") return classifyTerminalAction(normalized, params?.action);
   if (name === "session_folders") return classifySessionFoldersAction(normalized, params?.action);
+  if (name === "file") return classifyFileAction(normalized, params?.action);
   if (normalized === SESSION_PERMISSION_MODES.OPERATE) return { action: "allow" };
   if (normalized === SESSION_PERMISSION_MODES.READ_ONLY) return blocked(name);
   if (normalized === SESSION_PERMISSION_MODES.AUTO) return review(name);

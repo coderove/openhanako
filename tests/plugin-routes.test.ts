@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import crypto from "crypto";
@@ -11,6 +10,12 @@ import {
   verifyPluginIframeTicketForHostRequest,
 } from "../server/routes/plugins.ts";
 import { PluginIframeTicketError } from "../core/plugin-iframe-ticket-service.ts";
+import { PluginAssetSessionError } from "../core/plugin-asset-session-service.ts";
+import {
+  isMalformedPluginAssetRequest,
+  isPluginAssetRequest,
+  verifyPluginAssetSessionForHostRequest,
+} from "../server/http/plugin-assets.ts";
 
 describe("plugin route proxy", () => {
   it("dispatches to registered plugin route", async () => {
@@ -50,7 +55,7 @@ describe("plugin route proxy", () => {
 
 // ── Management API tests ──
 
-function mockEngine(overrides = {}) {
+function mockEngine( overrides: any = {}) {
   const routeRegistry = new Map();
   const allowFullAccess = overrides.allowFullAccess ?? false;
   return {
@@ -58,7 +63,7 @@ function mockEngine(overrides = {}) {
     getAgent: overrides.getAgent || (() => ({ id: "hanako" })),
     syncPluginExtensions: vi.fn(),
     pluginManager: {
-      listPlugins: (opts = {}) => {
+      listPlugins: ( opts: any = {}) => {
         const plugins = overrides.plugins || [];
         return opts.source
           ? plugins.filter((plugin) => (plugin.source || "community") === opts.source)
@@ -113,12 +118,58 @@ function createAppWithProductionPluginTicketBypass(engine) {
         verifyPluginIframeTicketForHostRequest(c, engine, { requireTicket: true });
       } catch (err) {
         if (err instanceof PluginIframeTicketError) {
-          return c.json({ error: err.code, detail: err.message }, err.status);
+          return c.json({ error: err.code, detail: err.message }, err.status as any);
         }
         throw err;
       }
       await next();
       return;
+    }
+    await next();
+  });
+  app.route("/api", createPluginsRoute(engine));
+  return app;
+}
+
+function createAppWithProductionPluginResourceAuth(engine) {
+  const app = new Hono();
+  app.use("*", async (c, next) => {
+    const routePath = new URL(c.req.url).pathname;
+    if (
+      (c.req.method === "GET" || c.req.method === "HEAD")
+      && /^\/api\/plugins\/[^/]+\/.+$/.test(routePath)
+      && c.req.query("pluginIframeTicket")
+    ) {
+      try {
+        verifyPluginIframeTicketForHostRequest(c, engine, { requireTicket: true });
+      } catch (err) {
+        if (err instanceof PluginIframeTicketError) {
+          return c.json({ error: err.code, detail: err.message }, err.status as any);
+        }
+        throw err;
+      }
+      await next();
+      return;
+    }
+    if (isMalformedPluginAssetRequest(c.req.url, routePath)) {
+      return c.json({ error: "plugin_asset_not_found" }, 404);
+    }
+    if ((c.req.method === "GET" || c.req.method === "HEAD") && isPluginAssetRequest(routePath)) {
+      try {
+        const session = verifyPluginAssetSessionForHostRequest(c, engine, { requireSession: false });
+        if (session) {
+          await next();
+          return;
+        }
+      } catch (err) {
+        if (err instanceof PluginAssetSessionError) {
+          return c.json({ error: err.code, detail: err.message }, err.status as any);
+        }
+        throw err;
+      }
+    }
+    if (/^\/api\/plugins\/[^/]+\/.+$/.test(routePath)) {
+      return c.json({ error: "forbidden" }, 403);
     }
     await next();
   });
@@ -153,7 +204,7 @@ function makeStoredZip(files) {
 
   for (const [name, content] of Object.entries(files)) {
     const nameBuf = Buffer.from(name);
-    const data = Buffer.from(content);
+    const data = Buffer.from(content as string);
     const crc = crc32(data);
 
     const local = Buffer.alloc(30);
@@ -309,7 +360,7 @@ describe("plugin management API", () => {
 
   describe("PUT /plugins/:id/enabled", () => {
     it("enables a plugin", async () => {
-      const enableFn = vi.fn().mockResolvedValue();
+      const enableFn = (vi.fn().mockResolvedValue as any)();
       const engine = mockEngine({ enablePlugin: enableFn });
       const app = createApp(engine);
       const res = await app.request("/api/plugins/p1/enabled", {
@@ -323,7 +374,7 @@ describe("plugin management API", () => {
     });
 
     it("disables a plugin", async () => {
-      const disableFn = vi.fn().mockResolvedValue();
+      const disableFn = (vi.fn().mockResolvedValue as any)();
       const engine = mockEngine({ disablePlugin: disableFn });
       const app = createApp(engine);
       const res = await app.request("/api/plugins/p1/enabled", {
@@ -350,7 +401,7 @@ describe("plugin management API", () => {
 
   describe("plugin proxy route namespaces", () => {
     it("dispatches plugin settings routes without hitting plugin management enablement", async () => {
-      const enableFn = vi.fn().mockResolvedValue();
+      const enableFn = (vi.fn().mockResolvedValue as any)();
       const engine = mockEngine({ enablePlugin: enableFn });
       const pluginApp = new Hono();
       pluginApp.put("/settings/enabled", async (c) => {
@@ -499,6 +550,153 @@ describe("plugin management API", () => {
       }
     });
 
+    it("issues a path-scoped asset session from iframe pages and serves static plugin assets", async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "hana-plugin-assets-"));
+      try {
+        const pluginDir = path.join(tmpDir, "plugins", "demo");
+        fs.mkdirSync(path.join(pluginDir, "assets", "dist"), { recursive: true });
+        fs.writeFileSync(path.join(pluginDir, "assets", "dist", "dashboard.js"), "export const ok = true;\n");
+
+        const engine = mockEngine({
+          hanakoHome: tmpDir,
+          pm: {
+            getPlugin: (id) => (
+              id === "demo"
+                ? { id: "demo", status: "loaded", pluginDir }
+                : null
+            ),
+          },
+        });
+        const pluginApp = new Hono();
+        pluginApp.get("/page", (c) => c.html("<!doctype html><script type=\"module\" src=\"/api/plugins/demo/assets/dist/dashboard.js\"></script>"));
+        engine.pluginManager.routeRegistry.set("demo", pluginApp);
+        const app = createAppWithProductionPluginResourceAuth(engine);
+
+        const ticketRes = await app.request("/api/plugins/iframe-ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ routeUrl: "/api/plugins/demo/page" }),
+        });
+        expect(ticketRes.status).toBe(200);
+        const ticketBody = await ticketRes.json();
+
+        const pageRes = await app.request(
+          `/api/plugins/demo/page?pluginIframeTicket=${encodeURIComponent(ticketBody.ticket)}`,
+        );
+        expect(pageRes.status).toBe(200);
+        const cookie = pageRes.headers.get("set-cookie");
+        expect(cookie).toContain("HttpOnly");
+        expect(cookie).toContain("SameSite=Strict");
+        expect(cookie).toContain("Path=/api/plugins/demo/assets/");
+
+        const assetRes = await app.request("/api/plugins/demo/assets/dist/dashboard.js", {
+          headers: { Cookie: cookie },
+        });
+        expect(assetRes.status).toBe(200);
+        expect(assetRes.headers.get("content-type")).toContain("text/javascript");
+        expect(assetRes.headers.get("x-content-type-options")).toBe("nosniff");
+        expect(await assetRes.text()).toBe("export const ok = true;\n");
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("keeps asset sessions confined to static files under the plugin assets root", async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "hana-plugin-assets-confined-"));
+      try {
+        const pluginDir = path.join(tmpDir, "plugins", "demo");
+        fs.mkdirSync(path.join(pluginDir, "assets", "dist"), { recursive: true });
+        fs.writeFileSync(path.join(pluginDir, "assets", "dist", "app.js"), "console.log('ok');\n");
+        fs.writeFileSync(path.join(pluginDir, "assets", "dist", "app.js.map"), "{}\n");
+        fs.writeFileSync(path.join(pluginDir, "assets", ".secret"), "nope\n");
+        fs.mkdirSync(path.join(pluginDir, "routes"), { recursive: true });
+        fs.writeFileSync(path.join(pluginDir, "routes", "page.js"), "export default function route() {}\n");
+
+        const engine = mockEngine({
+          hanakoHome: tmpDir,
+          pm: {
+            getPlugin: (id) => (
+              id === "demo"
+                ? { id: "demo", status: "loaded", pluginDir }
+                : null
+            ),
+          },
+        });
+        const pluginApp = new Hono();
+        pluginApp.get("/page", (c) => c.html("<!doctype html><title>Demo</title>"));
+        engine.pluginManager.routeRegistry.set("demo", pluginApp);
+        const app = createAppWithProductionPluginResourceAuth(engine);
+
+        const ticketRes = await app.request("/api/plugins/iframe-ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ routeUrl: "/api/plugins/demo/page" }),
+        });
+        const ticketBody = await ticketRes.json();
+        const pageRes = await app.request(
+          `/api/plugins/demo/page?pluginIframeTicket=${encodeURIComponent(ticketBody.ticket)}`,
+        );
+        const cookie = pageRes.headers.get("set-cookie");
+        expect(cookie).toContain("Path=/api/plugins/demo/assets/");
+
+        for (const [unsafePath, expectedStatus] of [
+          ["/api/plugins/demo/assets/%2e%2e/routes/page.js", 403],
+          ["/api/plugins/demo/assets/.secret", 404],
+          ["/api/plugins/demo/assets/dist/app.js.map", 404],
+        ]) {
+          const res = await app.request(unsafePath as string, {
+            headers: { Cookie: cookie },
+          });
+          expect(res.status, unsafePath as string).toBe(expectedStatus);
+        }
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("does not let a plugin asset session authorize plugin route apps", async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "hana-plugin-assets-api-"));
+      try {
+        const pluginDir = path.join(tmpDir, "plugins", "demo");
+        fs.mkdirSync(path.join(pluginDir, "assets"), { recursive: true });
+        fs.writeFileSync(path.join(pluginDir, "assets", "entry.js"), "export {};\n");
+
+        const engine = mockEngine({
+          hanakoHome: tmpDir,
+          pm: {
+            getPlugin: (id) => (
+              id === "demo"
+                ? { id: "demo", status: "loaded", pluginDir }
+                : null
+            ),
+          },
+        });
+        const pluginApp = new Hono();
+        pluginApp.get("/page", (c) => c.html("<!doctype html><title>Demo</title>"));
+        pluginApp.get("/api/private", (c) => c.json({ secret: true }));
+        engine.pluginManager.routeRegistry.set("demo", pluginApp);
+        const app = createAppWithProductionPluginResourceAuth(engine);
+
+        const ticketRes = await app.request("/api/plugins/iframe-ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ routeUrl: "/api/plugins/demo/page" }),
+        });
+        const ticketBody = await ticketRes.json();
+        const pageRes = await app.request(
+          `/api/plugins/demo/page?pluginIframeTicket=${encodeURIComponent(ticketBody.ticket)}`,
+        );
+        const cookie = pageRes.headers.get("set-cookie");
+
+        const apiRes = await app.request("/api/plugins/demo/api/private", {
+          headers: { Cookie: cookie },
+        });
+        expect(apiRes.status).toBe(403);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
     it("rejects iframe ticket issuance for host-owned plugin management routes", async () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "hana-plugin-iframe-ticket-host-"));
       try {
@@ -607,7 +805,7 @@ describe("plugin management API", () => {
           listCapabilities: () => [{ type: "task:list", available: true }],
         },
       });
-      engine.taskRegistry = {
+      (engine as any).taskRegistry = {
         listAll: () => [{ taskId: "t1", type: "render", status: "running" }],
         listSchedules: () => [{ scheduleId: "daily", type: "digest", enabled: true }],
       };
@@ -652,7 +850,7 @@ describe("plugin management API", () => {
       const engine = mockEngine({
         plugins: [{ id: "demo", name: "Demo", version: "0.9.0", status: "loaded" }],
       });
-      engine.pluginMarketplace = {
+      (engine as any).pluginMarketplace = {
         load: async () => ({ source: { kind: "file", configured: true }, schemaVersion: 1, plugins: [plugin], warnings: [] }),
         getReadme: async () => "# Demo",
         getPlugin: async () => plugin,
@@ -696,7 +894,7 @@ describe("plugin management API", () => {
       const engine = mockEngine({
         plugins: [{ id: "demo", pluginKey: "dev:demo", source: "dev", name: "Demo Dev", version: "9.0.0", status: "loaded" }],
       });
-      engine.pluginMarketplace = {
+      (engine as any).pluginMarketplace = {
         load: async () => ({ source: { kind: "file", configured: true }, schemaVersion: 1, plugins: [plugin], warnings: [] }),
         getReadme: async () => "# Demo",
         getPlugin: async () => plugin,
@@ -760,7 +958,7 @@ describe("plugin management API", () => {
             installPlugin,
           },
         });
-        engine.pluginMarketplace = {
+        (engine as any).pluginMarketplace = {
           load: async () => ({ source: { kind: "url", configured: true }, schemaVersion: 1, plugins: [plugin], warnings: [] }),
           getReadme: async () => "# Demo",
           getPlugin: async () => plugin,
@@ -852,7 +1050,7 @@ describe("plugin management API", () => {
             listPlugins: () => [{ id: "demo", name: "Demo", version: "1.5.0", status: "loaded" }],
           },
         });
-        engine.pluginMarketplace = {
+        (engine as any).pluginMarketplace = {
           load: async () => ({ source: { kind: "url", configured: true }, schemaVersion: 1, plugins: [plugin], warnings: [] }),
           getReadme: async () => "# Demo",
           getPlugin: async () => plugin,
@@ -993,7 +1191,7 @@ describe("plugin management API", () => {
             installPlugin,
           },
         });
-        engine.pluginMarketplace = {
+        (engine as any).pluginMarketplace = {
           load: async () => ({ source: { kind: "url", configured: true }, schemaVersion: 1, plugins: [plugin], warnings: [] }),
           getReadme: async () => "# Demo",
           getPlugin: async () => plugin,
@@ -1018,7 +1216,7 @@ describe("plugin management API", () => {
 
   describe("PUT /plugins/settings", () => {
     it("calls setFullAccess and returns plugin list", async () => {
-      const setFn = vi.fn().mockResolvedValue();
+      const setFn = (vi.fn().mockResolvedValue as any)();
       const engine = mockEngine({
         setFullAccess: setFn,
         plugins: [
@@ -1340,7 +1538,7 @@ describe("plugin management API", () => {
             installPlugin,
           },
         });
-        engine.registerSessionFile = registerSessionFile;
+        (engine as any).registerSessionFile = registerSessionFile;
         const app = createApp(engine);
 
         const res = await app.request("/api/plugins/install", {
@@ -1559,8 +1757,8 @@ describe("plugin management API", () => {
 
     it("maps PluginDevService errors to their status code", async () => {
       const err = new Error("outside allowed roots");
-      err.status = 403;
-      err.code = "PLUGIN_DEV_SOURCE_OUTSIDE_ALLOWED_ROOTS";
+      (err as any).status = 403;
+      (err as any).code = "PLUGIN_DEV_SOURCE_OUTSIDE_ALLOWED_ROOTS";
       const engine = mockEngine({
         pluginDevService: {
           installFromSource: vi.fn(async () => { throw err; }),

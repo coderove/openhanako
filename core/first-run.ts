@@ -16,6 +16,7 @@ import {
   ensureDefaultWorkspace,
 } from "../shared/default-workspace.ts";
 import { createModuleLogger } from "../lib/debug-log.ts";
+import { USER_PROFILE_FILENAME } from "../lib/user-profile-store.ts";
 
 const log = createModuleLogger("first-run");
 
@@ -50,7 +51,7 @@ export function ensureFirstRun(hanakoHome, productDir) {
 
   // 4. 确保可选文件存在（老用户升级 + 新 agent 都覆盖）
   const touchIfMissing = (p) => { if (!fs.existsSync(p)) fs.writeFileSync(p, '', 'utf-8'); };
-  touchIfMissing(path.join(hanakoHome, 'user', 'user.md'));
+  touchIfMissing(path.join(hanakoHome, 'user', USER_PROFILE_FILENAME));
   const agents = fs.readdirSync(agentsDir, { withFileTypes: true });
   for (const entry of agents) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;

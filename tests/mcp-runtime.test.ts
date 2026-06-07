@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe, it, expect, vi } from "vitest";
 import {
   McpRuntime,
@@ -23,7 +22,7 @@ describe("MCP runtime policy", () => {
       getGlobalEnabled: () => true,
       getAgentConfig: vi.fn(async () => ({})),
       callTool: vi.fn(),
-    });
+    } as any);
 
     expect(tool.invocationStyle).toBe("pi_tool");
   });
@@ -337,7 +336,7 @@ describe("MCP runtime policy", () => {
         authorizationToken: "secret-token",
         enableGlobal: true,
       },
-    });
+    } as any);
 
     expect(stored.enabled).toBe(true);
     expect(stored.connectors[0]).toMatchObject({
@@ -593,7 +592,7 @@ describe("MCP connectors status tool", () => {
     expect(tool.name).toBe(MCP_CONNECTORS_STATUS_TOOL_NAME);
     expect(tool.metadata).not.toHaveProperty("connectorId");
 
-    const result = await tool.execute("call-1", {}, {});
+    const result = await (tool.execute as any)("call-1", {}, {});
     const payload = JSON.parse(result.content[0].text);
     expect(payload.connectors[0]).toMatchObject({
       id: "github",
@@ -610,7 +609,7 @@ describe("MCP connectors status tool", () => {
 // dedup, persistence of DCR products, and the two distinct write-back paths
 // (refresh keeps the live client; full re-auth stops it).
 describe("MCP runtime OAuth token refresh", () => {
-  function makeRefreshRuntime(connector, { fetchImpl } = {}) {
+  function makeRefreshRuntime(connector, { fetchImpl }: any = {}) {
     let current = { enabled: true, connectors: [connector] };
     const setSpy = vi.fn((_key, value) => { current = { ...current, ...value }; });
     const runtime = new McpRuntime({
@@ -876,14 +875,69 @@ describe("MCP runtime OAuth persistence", () => {
       token_type: "Bearer",
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
-    await runtime.completeOAuth({ state: "state-1", code: "code-1" });
+    await runtime.completeOAuth({ state: "state-1", code: "code-1" } as any);
 
-    const saved = current.connectors[0];
+    const saved = current.connectors[0] as any;
     expect(saved.oauthClientId).toBe("dcr-client");
     expect(saved.oauthClientSecret).toBe("dcr-secret");
     expect(saved.clientIdSource).toBe("dcr");
     expect(saved.oauth.accessToken).toBe("access-1");
     expect(saved.oauth.refreshToken).toBe("refresh-1");
+  });
+
+  it("fails OAuth completion when the saved connector cannot read back the token", async () => {
+    let current = {
+      enabled: true,
+      connectors: [{ id: "notion", name: "Notion", url: "https://mcp.example.com/mcp", authType: "oauth" }],
+    };
+    const runtime = new McpRuntime({
+      dataDir: "/tmp/mcp-readback-test",
+      config: {
+        get: vi.fn(() => current),
+        set: vi.fn((_key, value) => {
+          current = {
+            ...current,
+            ...value,
+            connectors: (value.connectors || []).map((connector: any) => {
+              const { oauth, ...rest } = connector;
+              return rest;
+            }),
+          };
+        }),
+      },
+      registerTool: vi.fn(() => () => {}),
+      bus: { request: vi.fn() },
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+
+    runtime.oauthSessions.set("state-1", {
+      status: "pending",
+      state: "state-1",
+      connectorId: "notion",
+      connectorUrl: "https://mcp.example.com/mcp",
+      clientId: "dcr-client",
+      clientSecret: "dcr-secret",
+      clientIdSource: "dcr",
+      redirectUri: "http://127.0.0.1:3210/api/plugins/mcp/oauth/callback",
+      codeVerifier: "verifier-1",
+      tokenEndpoint: "https://auth.example.com/token",
+      scope: "files:read offline_access",
+      resource: "https://mcp.example.com/mcp",
+    });
+    runtime.fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      access_token: "access-1",
+      refresh_token: "refresh-1",
+      expires_in: 3600,
+      token_type: "Bearer",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await expect(runtime.completeOAuth({ state: "state-1", code: "code-1" } as any))
+      .rejects
+      .toThrow("OAuth token was not persisted");
+    expect(runtime.getOAuthStatus("state-1")).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("OAuth token was not persisted"),
+    });
   });
 
   it("defaults clientIdSource to manual for legacy connectors that already have a client id", () => {

@@ -12,7 +12,12 @@ import {
   normalizeComputerUseSettings,
   revokeComputerUseApp,
 } from "./computer-use/settings.ts";
-import { normalizeSessionPermissionMode } from "./session-permission-mode.ts";
+import {
+  normalizeAutomationPermissionMode,
+  normalizeBridgePermissionMode,
+  normalizeSessionPermissionMode,
+  SESSION_PERMISSION_MODES,
+} from "./session-permission-mode.ts";
 import {
   mergeEditorTypography,
   normalizeEditorTypography,
@@ -36,6 +41,10 @@ import {
   mergeQuickChatPreferences,
   normalizeQuickChatPreferences,
 } from "../shared/quick-chat-preferences.ts";
+import {
+  mergeBrowserPreferences,
+  normalizeBrowserPreferences,
+} from "../shared/browser-preferences.ts";
 import { createModuleLogger } from "../lib/debug-log.ts";
 import { normalizeSessionThinkingLevel } from "./session-thinking-level.ts";
 
@@ -220,17 +229,42 @@ export class PreferencesManager {
     this.savePreferences(prefs);
   }
 
+  /** 读取 bridge 权限模式（全局，默认自动审核） */
+  getBridgePermissionMode() {
+    return normalizeBridgePermissionMode(this._cache.bridge || {});
+  }
+
+  /** 保存 bridge 权限模式；保留 readOnly 旧字段供旧路径兼容 */
+  setBridgePermissionMode(mode) {
+    const normalized = normalizeBridgePermissionMode({ permissionMode: mode });
+    const prefs = this._mutableCopy();
+    const bridge = { ...(prefs.bridge || {}) };
+    bridge.permissionMode = normalized;
+    if (normalized === SESSION_PERMISSION_MODES.READ_ONLY) bridge.readOnly = true;
+    else delete bridge.readOnly;
+    prefs.bridge = bridge;
+    this.savePreferences(prefs);
+    return normalized;
+  }
+
   /** 读取 bridge 只读总开关（全局，默认关闭） */
   getBridgeReadOnly() {
-    return this._cache.bridge?.readOnly === true;
+    return this.getBridgePermissionMode() === SESSION_PERMISSION_MODES.READ_ONLY;
   }
 
   /** 保存 bridge 只读总开关 */
   setBridgeReadOnly(enabled) {
     const prefs = this._mutableCopy();
     const bridge = { ...(prefs.bridge || {}) };
-    if (enabled) bridge.readOnly = true;
-    else delete bridge.readOnly;
+    if (enabled) {
+      bridge.readOnly = true;
+      if (bridge.permissionMode) bridge.permissionMode = SESSION_PERMISSION_MODES.READ_ONLY;
+    } else {
+      delete bridge.readOnly;
+      if (bridge.permissionMode === SESSION_PERMISSION_MODES.READ_ONLY) {
+        bridge.permissionMode = SESSION_PERMISSION_MODES.AUTO;
+      }
+    }
     if (Object.keys(bridge).length === 0) delete prefs.bridge;
     else prefs.bridge = bridge;
     this.savePreferences(prefs);
@@ -250,6 +284,22 @@ export class PreferencesManager {
     if (Object.keys(bridge).length === 0) delete prefs.bridge;
     else prefs.bridge = bridge;
     this.savePreferences(prefs);
+  }
+
+  /** 读取自动化运行权限模式（全局，默认自动审核）。 */
+  getAutomationPermissionMode() {
+    return normalizeAutomationPermissionMode(this._cache.automation || {});
+  }
+
+  /** 保存自动化运行权限模式。 */
+  setAutomationPermissionMode(mode) {
+    const normalized = normalizeAutomationPermissionMode({ permissionMode: mode });
+    const prefs = this._mutableCopy();
+    const automation = { ...(prefs.automation || {}) };
+    automation.permissionMode = normalized;
+    prefs.automation = automation;
+    this.savePreferences(prefs);
+    return normalized;
   }
 
   /** 读取全局出站代理设置。 */
@@ -410,6 +460,19 @@ export class PreferencesManager {
     prefs.quick_chat = mergeQuickChatPreferences(prefs.quick_chat || {}, partial || {});
     this.savePreferences(prefs);
     return prefs.quick_chat;
+  }
+
+  /** 读取内置浏览器偏好。 */
+  getBrowserPreferences() {
+    return normalizeBrowserPreferences(this._cache.browser || {});
+  }
+
+  /** 合并写入内置浏览器偏好。 */
+  setBrowserPreferences(partial) {
+    const prefs = this._mutableCopy();
+    prefs.browser = mergeBrowserPreferences(prefs.browser || {}, partial || {});
+    this.savePreferences(prefs);
+    return prefs.browser;
   }
 
   /** 读取指定工作区的 UI 状态（文件夹展开、预览 tabs 等）。 */

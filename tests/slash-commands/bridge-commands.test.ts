@@ -1,10 +1,9 @@
-// @ts-nocheck
 import { describe, it, expect, vi } from "vitest";
 import { bridgeCommands } from "../../core/slash-commands/bridge-commands.ts";
 import { SlashCommandRegistry } from "../../core/slash-command-registry.ts";
 import { SlashCommandDispatcher } from "../../core/slash-command-dispatcher.ts";
 
-function makeCtx(overrides = {}) {
+function makeCtx( overrides: any = {}) {
   return {
     sessionRef: { kind: "bridge", agentId: "a1", sessionKey: "tg_dm_x@a1" },
     sessionOps: {
@@ -30,18 +29,18 @@ describe("/stop", () => {
     const ctx = makeCtx();
     const r = await stop.handler(ctx);
     expect(ctx.sessionOps.abort).toHaveBeenCalledWith(ctx.sessionRef);
-    expect(r?.silent).toBe(true);
+    expect((r as any)?.silent).toBe(true);
   });
   it("returns reply when nothing to abort", async () => {
     const ctx = makeCtx({ sessionOps: { isStreaming: () => false, abort: vi.fn(async () => false) } });
     const r = await stop.handler(ctx);
-    expect(r.reply).toMatch(/当前无活动/);
+    expect((r as any).reply).toMatch(/当前无活动/);
   });
   it("returns reply when abort reports failure even while streaming was observed", async () => {
     // 防 regression：TOCTOU 假阳性时 abort=false 仍须走 fallback reply
     const ctx = makeCtx({ sessionOps: { isStreaming: () => true, abort: vi.fn(async () => false) } });
     const r = await stop.handler(ctx);
-    expect(r.reply).toMatch(/当前无活动/);
+    expect((r as any).reply).toMatch(/当前无活动/);
   });
 });
 
@@ -51,17 +50,17 @@ describe("/new", () => {
     const ctx = makeCtx();
     const r = await cmd.handler(ctx);
     expect(ctx.sessionOps.rotate).toHaveBeenCalledWith(ctx.sessionRef);
-    expect(r.reply).toMatch(/已开启新会话.*归档/);
+    expect((r as any).reply).toMatch(/已开启新会话.*归档/);
   });
   it("reports no-history status distinctly", async () => {
     const ctx = makeCtx({ sessionOps: { rotate: vi.fn(async () => ({ status: "no-history" })) } });
     const r = await cmd.handler(ctx);
-    expect(r.reply).toMatch(/无历史/);
+    expect((r as any).reply).toMatch(/无历史/);
   });
   it("reports not-found status distinctly", async () => {
     const ctx = makeCtx({ sessionOps: { rotate: vi.fn(async () => ({ status: "not-found" })) } });
     const r = await cmd.handler(ctx);
-    expect(r.reply).toMatch(/未找到/);
+    expect((r as any).reply).toMatch(/未找到/);
   });
 });
 
@@ -71,12 +70,12 @@ describe("/reset", () => {
     const ctx = makeCtx();
     const r = await cmd.handler(ctx);
     expect(ctx.sessionOps.delete).toHaveBeenCalledWith(ctx.sessionRef);
-    expect(r.reply).toMatch(/已重置/);
+    expect((r as any).reply).toMatch(/已重置/);
   });
   it("reports not-found status distinctly", async () => {
     const ctx = makeCtx({ sessionOps: { delete: vi.fn(async () => ({ status: "not-found" })) } });
     const r = await cmd.handler(ctx);
-    expect(r.reply).toMatch(/未找到/);
+    expect((r as any).reply).toMatch(/未找到/);
   });
 
   it("/clear dispatches to the same reset handler and deletes the current session", async () => {
@@ -108,6 +107,132 @@ describe("/reset", () => {
   });
 });
 
+describe("/confirm and /reject", () => {
+  const confirm = bridgeCommands.find(c => c.name === "confirm");
+  const reject = bridgeCommands.find(c => c.name === "reject");
+
+  it("confirms a pending request and broadcasts the resolved state", async () => {
+    const confirmStore = {
+      get: vi.fn(() => ({ kind: "cron", sessionPath: "/sessions/a.jsonl", payload: {} })),
+      resolve: vi.fn(() => true),
+    };
+    const emitEvent = vi.fn();
+    const ctx = makeCtx({
+      args: "confirm_1",
+      engine: { confirmStore, emitEvent },
+    });
+
+    const r = await confirm.handler(ctx);
+
+    expect(confirmStore.get).toHaveBeenCalledWith("confirm_1");
+    expect(confirmStore.resolve).toHaveBeenCalledWith("confirm_1", "confirmed");
+    expect(emitEvent).toHaveBeenCalledWith({
+      type: "confirmation_resolved",
+      confirmId: "confirm_1",
+      action: "confirmed",
+    }, null);
+    expect((r as any).reply).toMatch(/已确认/);
+  });
+
+  it("rejects a pending request", async () => {
+    const confirmStore = {
+      get: vi.fn(() => ({ kind: "cron", sessionPath: "/sessions/a.jsonl", payload: {} })),
+      resolve: vi.fn(() => true),
+    };
+    const ctx = makeCtx({
+      args: "confirm_2",
+      engine: { confirmStore, emitEvent: vi.fn() },
+    });
+
+    const r = await reject.handler(ctx);
+
+    expect(confirmStore.resolve).toHaveBeenCalledWith("confirm_2", "rejected");
+    expect((r as any).reply).toMatch(/已拒绝/);
+  });
+
+  it("reports usage when confirmation id is missing", async () => {
+    const r = await confirm.handler(makeCtx({ args: "" }));
+    expect((r as any).reply).toBe("用法：/confirm <确认ID>");
+  });
+
+  it("reports missing or already resolved confirmation without resolving", async () => {
+    const confirmStore = {
+      get: vi.fn(() => null),
+      resolve: vi.fn(),
+    };
+    const r = await confirm.handler(makeCtx({
+      args: "missing",
+      engine: { confirmStore },
+    }));
+
+    expect(confirmStore.resolve).not.toHaveBeenCalled();
+    expect((r as any).reply).toMatch(/不存在或已处理/);
+  });
+});
+
+describe("/apply", () => {
+  const apply = bridgeCommands.find(c => c.name === "apply");
+
+  it("applies the latest automation suggestion in the current bridge session", async () => {
+    const automationSuggestionStore = {
+      apply: vi.fn(async () => ({
+        ok: true,
+        suggestion: { jobData: { label: "Tea reminder" } },
+        result: { id: "job_1" },
+      })),
+    };
+    const ctx = makeCtx({
+      args: "",
+      engine: { automationSuggestionStore },
+    });
+
+    const r = await apply.handler(ctx);
+
+    expect(automationSuggestionStore.apply).toHaveBeenCalledWith({
+      bridgeSessionKey: "tg_dm_x@a1",
+      sessionPath: null,
+      ref: null,
+    });
+    expect((r as any).reply).toMatch(/已创建自动任务.*Tea reminder/);
+  });
+
+  it("applies a numeric automation suggestion id inside the current bridge session", async () => {
+    const automationSuggestionStore = {
+      apply: vi.fn(async () => ({
+        ok: true,
+        suggestion: { jobData: { label: "Lunch reminder" }, shortCode: "3827" },
+        result: { id: "job_2" },
+      })),
+    };
+    const ctx = makeCtx({
+      args: "3827",
+      engine: { getAutomationSuggestionStore: () => automationSuggestionStore },
+    });
+
+    const r = await apply.handler(ctx);
+
+    expect(automationSuggestionStore.apply).toHaveBeenCalledWith({
+      bridgeSessionKey: "tg_dm_x@a1",
+      sessionPath: null,
+      ref: "3827",
+    });
+    expect((r as any).reply).toMatch(/已创建自动任务.*Lunch reminder/);
+  });
+
+  it("reports when the current bridge session has no pending automation suggestions", async () => {
+    const automationSuggestionStore = {
+      apply: vi.fn(async () => ({ ok: false, reason: "not-found" })),
+    };
+
+    const r = await apply.handler(makeCtx({
+      args: "",
+      engine: { automationSuggestionStore },
+    }));
+
+    expect((r as any).reply).toMatch(/没有待创建/);
+  });
+});
+
 describe("/compact", () => {
   const cmd = bridgeCommands.find(c => c.name === "compact");
 
@@ -125,7 +250,7 @@ describe("/compact", () => {
     expect(ctx.reply.mock.calls[0][0]).toMatch(/正在压缩/);
     expect(ctx.reply.mock.calls[1][0]).toMatch(/9000.*3200.*tokens/);
     // handler 自己调了 reply，走 silent 避免 dispatcher 再回一遍
-    expect(r?.silent).toBe(true);
+    expect((r as any)?.silent).toBe(true);
   });
 
   it("falls back to generic '已压缩' message when usage unavailable", async () => {
@@ -145,7 +270,7 @@ describe("/compact", () => {
     const r = await cmd.handler(ctx);
     expect(ctx.reply).toHaveBeenCalledTimes(2);
     expect(ctx.reply.mock.calls[1][0]).toMatch(/压缩失败.*inject failed/);
-    expect(r?.silent).toBe(true);
+    expect((r as any)?.silent).toBe(true);
   });
 });
 
@@ -172,7 +297,7 @@ describe("/fresh-compact", () => {
     expect(ctx.reply).toHaveBeenCalledTimes(2);
     expect(ctx.reply.mock.calls[0][0]).toMatch(/fresh-compact/);
     expect(ctx.reply.mock.calls[1][0]).toMatch(/10000.*4200.*tokens/);
-    expect(r?.silent).toBe(true);
+    expect((r as any)?.silent).toBe(true);
   });
 
   it("rejects fresh-compact while bridge is attached to a desktop session", async () => {
@@ -184,7 +309,7 @@ describe("/fresh-compact", () => {
 
     const r = await cmd.handler(ctx);
 
-    expect(r.reply).toMatch(/接管桌面会话期间/);
+    expect((r as any).reply).toMatch(/接管桌面会话期间/);
     expect(ctx.sessionOps.freshCompact).not.toHaveBeenCalled();
   });
 });

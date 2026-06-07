@@ -54,6 +54,7 @@ import { createChannelsRoute } from "./routes/channels.ts";
 import { createDmRoute } from "./routes/dm.ts";
 import { createFsRoute } from "./routes/fs.ts";
 import { createPreferencesRoute } from "./routes/preferences.ts";
+import { createSettingsSnapshotRoute } from "./routes/settings-snapshot.ts";
 import { createExperimentsRoute } from "./routes/experiments.ts";
 import { createBridgeRoute } from "./routes/bridge.ts";
 import { createAuthRoute } from "./routes/auth.ts";
@@ -64,6 +65,12 @@ import {
   verifyPluginIframeTicketForHostRequest,
 } from "./routes/plugins.ts";
 import { PluginIframeTicketError } from "../core/plugin-iframe-ticket-service.ts";
+import { PluginAssetSessionError } from "../core/plugin-asset-session-service.ts";
+import {
+  isMalformedPluginAssetRequest,
+  isPluginAssetRequest,
+  verifyPluginAssetSessionForHostRequest,
+} from "./http/plugin-assets.ts";
 import { createCheckpointsRoute } from "./routes/checkpoints.ts";
 import { createCommandsRoute } from "./routes/commands.ts";
 import { createServerIdentityRoute } from "./routes/server-identity.ts";
@@ -71,6 +78,7 @@ import { createResourcesRoute } from "./routes/resources.ts";
 import { createUsageRoute } from "./routes/usage.ts";
 import { createWebAuthRoute } from "./routes/web-auth.ts";
 import { createMobileWorkbenchRoute } from "./routes/mobile-workbench.ts";
+import { createStudioWorkspacesRoute } from "./routes/studio-workspaces.ts";
 import { createMobileStaticRoute } from "./routes/mobile-static.ts";
 import { createHtmlPreviewRoute } from "./routes/html-preview.ts";
 import { createAccessRoute } from "./routes/access.ts";
@@ -362,6 +370,25 @@ app.use("*", async (c: any, next: any) => {
     return;
   }
 
+  if (isMalformedPluginAssetRequest(c.req.url, routePath)) {
+    return c.json({ error: "plugin_asset_not_found" }, 404);
+  }
+
+  if (isPluginAssetSessionRequest(c, routePath)) {
+    try {
+      const session = verifyPluginAssetSessionForHostRequest(c, engine, { requireSession: false });
+      if (session) {
+        await next();
+        return;
+      }
+    } catch (err: any) {
+      if (err instanceof PluginAssetSessionError) {
+        return c.json({ error: (err as any).code, detail: err.message }, (err as any).status);
+      }
+      throw err;
+    }
+  }
+
   if (isPublicHttpRoute({ method: c.req.method, path: routePath })) {
     await next();
     return;
@@ -413,6 +440,12 @@ function isPluginIframeTicketRequest(c: any, routePath: any) {
   return (method === "GET" || method === "HEAD")
     && /^\/api\/plugins\/[^/]+\/.+$/.test(routePath)
     && !!c.req.query("pluginIframeTicket");
+}
+
+function isPluginAssetSessionRequest(c: any, routePath: any) {
+  const method = c.req.method;
+  return (method === "GET" || method === "HEAD")
+    && isPluginAssetRequest(routePath);
 }
 
 // 全局错误处理
@@ -530,6 +563,47 @@ hub.eventBus.handle("utility:call-text", async (payload: any = {}) => {
       attribution: sessionPath
         ? { kind: "session", agentId: utility.usageAgentId || agentId || null, sessionPath }
         : { kind: "utility", agentId: utility.usageAgentId || agentId || null },
+    },
+  } as any);
+  return { text };
+});
+hub.eventBus.handle("model:sample-text", async (payload: any = {}) => {
+  if (!Array.isArray(payload.messages)) {
+    throw new Error("messages is required");
+  }
+  const sessionPath = typeof payload.sessionPath === "string" && payload.sessionPath.trim()
+    ? payload.sessionPath.trim()
+    : null;
+  const agentId = typeof payload.agentId === "string" && payload.agentId.trim()
+    ? payload.agentId.trim()
+    : (sessionPath ? engine.agentIdFromSessionPath?.(sessionPath) || null : null);
+  const pluginId = typeof payload.pluginId === "string" && payload.pluginId.trim()
+    ? payload.pluginId.trim()
+    : null;
+  const utility = engine.resolveUtilityConfig({ agentId, sessionPath });
+  const text = await callText({
+    api: utility.api,
+    apiKey: utility.api_key,
+    baseUrl: utility.base_url,
+    model: utility.utility,
+    systemPrompt: payload.systemPrompt || "",
+    messages: payload.messages,
+    temperature: payload.temperature,
+    maxTokens: payload.maxTokens,
+    usageLedger: utility.usageLedger,
+    usageContext: {
+      source: {
+        subsystem: pluginId ? "plugin" : "utility",
+        operation: payload.operation || "sample-text",
+        surface: "plugin",
+        trigger: "tool",
+        actor: pluginId ? { kind: "plugin", pluginId, agentId: agentId || null, sessionPath } : undefined,
+      },
+      attribution: pluginId
+        ? { kind: "plugin", pluginId, agentId: utility.usageAgentId || agentId || null, sessionPath }
+        : sessionPath
+          ? { kind: "session", agentId: utility.usageAgentId || agentId || null, sessionPath }
+          : { kind: "utility", agentId: utility.usageAgentId || agentId || null },
     },
   } as any);
   return { text };
@@ -696,11 +770,16 @@ app.route("/api", createDevicesRoute(engine));
 app.route("/api", createCharacterCardsRoute(engine));
 app.route("/api", createDeskRoute(engine, hub));
 app.route("/api", createMobileWorkbenchRoute(engine));
+app.route("/api", createStudioWorkspacesRoute(engine));
 app.route("/api", createSkillsRoute(engine));
 app.route("/api", createChannelsRoute(engine, hub));
 app.route("/api", createDmRoute(engine, hub));
 app.route("/api", createFsRoute(engine));
 app.route("/api", createPreferencesRoute(engine));
+app.route("/api", createSettingsSnapshotRoute(engine, {
+  bridgeManagerRef,
+  runtimeState: serverRuntimeState,
+}));
 app.route("/api", createExperimentsRoute(engine));
 app.route("/api", createBridgeRoute(engine, bridgeManagerRef));
 app.route("/api", createAuthRoute(engine));
@@ -815,14 +894,14 @@ app.post("/api/session-thinking-level", async (c) => {
 });
 
 app.post("/api/session-permission-mode", async (c) => {
-  const { mode, pendingNewSession, currentSessionOnly, sessionPath, persistDefault } = await safeJson(c);
+  const { mode, pendingNewSession, currentSessionOnly, sessionPath } = await safeJson(c);
   const targetSessionPath = typeof sessionPath === "string" && sessionPath ? sessionPath : null;
   const result = currentSessionOnly === true
     ? engine.setCurrentSessionPermissionMode(mode)
     : pendingNewSession === true
     ? engine.setPendingSessionPermissionMode(mode)
     : targetSessionPath
-    ? engine.setSessionPermissionModeForSession(targetSessionPath, mode, { persistDefault: persistDefault === true })
+    ? engine.setSessionPermissionModeForSession(targetSessionPath, mode)
     : engine.setSessionPermissionMode(mode);
   const explicitSession = currentSessionOnly === true || !!targetSessionPath;
   if (explicitSession && result?.ok === false) {

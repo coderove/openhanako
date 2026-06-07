@@ -28,6 +28,12 @@ import { SubagentThreadStore } from "../lib/subagent-thread-store.ts";
 import { persistBrowserScreenshotFileSync } from "../lib/session-files/browser-screenshot-file.ts";
 import { getInvalidProviderModelIds } from "../shared/provider-model-validation.ts";
 import { normalizeThinkingLevelForModel } from "./session-thinking-level.ts";
+import {
+  legacyAccessModeFromPermissionMode,
+  normalizeBridgePermissionMode,
+  normalizeSessionPermissionMode,
+  SESSION_PERMISSION_MODES,
+} from "./session-permission-mode.ts";
 import { lookupKnown } from "../shared/known-models.ts";
 import { SESSION_PREFIX_MAP } from "../lib/bridge/session-key.ts";
 import { migrateLegacyApiKeyAuthToProviders } from "./provider-auth-migration.ts";
@@ -119,6 +125,12 @@ const migrations = {
   36: migrateSubagentThreadRegistry,
   // subagent direct instance：旧 ephemeral/reusable kind 归一为 direct，instance 变成展示 label
   37: migrateSubagentDirectThreadSemantics,
+  // automation 执行模型收敛：旧 direct notify 显式改写为 Agent Run
+  38: migrateDirectNotifyAutomationsToAgentRuns,
+  // automation 归属修复：所有可运行任务必须能确定执行 Agent；旧 plugin/direct 执行器收敛为 Agent Run
+  39: repairAutomationOwnershipAfterAgentRunConsolidation,
+  // session permission mode 收敛：旧 sidecar 的 planMode/accessMode 补齐 canonical permissionMode
+  40: migrateSessionPermissionModeSidecars,
 };
 
 // ── Runner ──────────────────────────────────────────────────────────────────
@@ -269,7 +281,7 @@ function cleanDanglingProviderRefs(ctx) {
  * preferences.json 中的 bridge.telegram / feishu / qq / wechat / whatsapp
  * 各自可能带 agentId 字段指定归属 agent。迁移后每个 platform config
  * 写入对应 agent 的 config.yaml，owner 信息一并合入。
- * bridge.readOnly / receiptEnabled 保留为全局偏好。
+ * bridge.permissionMode / readOnly / receiptEnabled 保留为全局偏好。
  */
 function migrateBridgeToPerAgent(ctx) {
   const { agentsDir, prefs, log } = ctx;
@@ -279,7 +291,12 @@ function migrateBridgeToPerAgent(ctx) {
 
   const primaryAgentId = preferences.primaryAgent || null;
   const ownerDict = bridge.owner || {};
-  const readOnly = bridge.readOnly === true;
+  const explicitPermissionMode = typeof bridge.permissionMode === "string"
+    ? normalizeBridgePermissionMode({ permissionMode: bridge.permissionMode })
+    : null;
+  const readOnly = explicitPermissionMode
+    ? explicitPermissionMode === SESSION_PERMISSION_MODES.READ_ONLY
+    : bridge.readOnly === true;
   const receiptEnabled = bridge.receiptEnabled === false ? false : undefined;
 
   const PLATFORMS = ["telegram", "feishu", "qq", "wechat", "whatsapp"];
@@ -354,6 +371,9 @@ function migrateBridgeToPerAgent(ctx) {
 
   // 清理旧的 platform / owner 键，只保留新的全局偏好键
   const nextBridgePrefs: any = {};
+  if (explicitPermissionMode && explicitPermissionMode !== SESSION_PERMISSION_MODES.AUTO) {
+    nextBridgePrefs.permissionMode = explicitPermissionMode;
+  }
   if (readOnly) nextBridgePrefs.readOnly = true;
   if (receiptEnabled === false) nextBridgePrefs.receiptEnabled = false;
   if (Object.keys(nextBridgePrefs).length > 0) preferences.bridge = nextBridgePrefs;
@@ -1304,6 +1324,203 @@ function patchCronJobsFileForAutomation(jobsPath, log) {
   return { changed: true, patchedJobs };
 }
 
+function migrateDirectNotifyAutomationsToAgentRuns(ctx) {
+  const { hanakoHome, agentsDir, log } = ctx;
+  const paths = [];
+
+  const studiosDir = path.join(hanakoHome, "studios");
+  try {
+    for (const entry of fs.readdirSync(studiosDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      paths.push(path.join(studiosDir, entry.name, "desk", "cron-jobs.json"));
+    }
+  } catch {}
+
+  try {
+    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      paths.push(path.join(agentsDir, entry.name, "desk", "cron-jobs.json"));
+    }
+  } catch {}
+
+  let patchedFiles = 0;
+  let patchedJobs = 0;
+  for (const jobsPath of paths) {
+    const result = patchCronJobsFileForAutomation(jobsPath, log);
+    if (!result.changed) continue;
+    patchedFiles++;
+    patchedJobs += result.patchedJobs;
+  }
+
+  log?.(`[migrations] #38: direct notify automations rewritten as Agent runs (${patchedJobs} jobs in ${patchedFiles} files)`);
+}
+
+function repairAutomationOwnershipAfterAgentRunConsolidation(ctx) {
+  const { hanakoHome, agentsDir, log } = ctx;
+  const stores = [];
+
+  const studiosDir = path.join(hanakoHome, "studios");
+  try {
+    for (const entry of fs.readdirSync(studiosDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      stores.push({
+        jobsPath: path.join(studiosDir, entry.name, "desk", "cron-jobs.json"),
+        fallbackAgentId: null,
+      });
+    }
+  } catch {}
+
+  try {
+    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      stores.push({
+        jobsPath: path.join(agentsDir, entry.name, "desk", "cron-jobs.json"),
+        fallbackAgentId: entry.name,
+      });
+    }
+  } catch {}
+
+  let patchedFiles = 0;
+  let patchedJobs = 0;
+  for (const store of stores) {
+    const result = repairAutomationOwnershipFile(store.jobsPath, store.fallbackAgentId, log);
+    if (!result.changed) continue;
+    patchedFiles++;
+    patchedJobs += result.patchedJobs;
+  }
+
+  log?.(`[migrations] #39: automation ownership repaired (${patchedJobs} jobs in ${patchedFiles} files)`);
+}
+
+const AUTOMATION_OWNER_WARNING = {
+  code: "missing_automation_owner",
+  message: "需要选择执行助手后再启用",
+};
+
+const AUTOMATION_EXECUTOR_WARNING = {
+  code: "unsupported_automation_executor",
+  message: "需要重新保存为 Agent Run 后再启用",
+};
+
+function migrationOptionalString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function migrationClone(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function migrationRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function inferAutomationOwner(job, fallbackAgentId) {
+  return migrationOptionalString(job?.actorAgentId)
+    || migrationOptionalString(job?.executor?.agentId)
+    || migrationOptionalString(job?.legacyRef?.agentId)
+    || migrationOptionalString(fallbackAgentId);
+}
+
+function migrationExecutionContext(job, actorAgentId, fallbackAgentId) {
+  const executorContext = migrationRecord(job?.executor?.executionContext);
+  const sourceContext = migrationRecord(job?.executionContext) || executorContext;
+  const source = sourceContext ? migrationClone(sourceContext) : {};
+  const legacyLike = !!migrationOptionalString(job?.legacyRef?.agentId) || !!migrationOptionalString(fallbackAgentId);
+  return {
+    kind: migrationOptionalString(source.kind) || (legacyLike ? "legacy_agent_home" : "migration_repaired"),
+    cwd: migrationOptionalString(source.cwd),
+    workspaceFolders: Array.isArray(source.workspaceFolders)
+      ? source.workspaceFolders.filter((item) => typeof item === "string" && item.trim())
+      : [],
+    sourceSessionPath: migrationOptionalString(source.sourceSessionPath),
+    createdByAgentId: migrationOptionalString(source.createdByAgentId) || actorAgentId,
+  };
+}
+
+function repairAutomationJobForOwnership(job, fallbackAgentId) {
+  let next = patchAutomationJobForMigration(job);
+  const owner = inferAutomationOwner(next, fallbackAgentId);
+  const executor = migrationRecord(next.executor);
+  const unsupportedExecutor = executor?.kind && executor.kind !== "agent_session";
+
+  if (unsupportedExecutor) {
+    next = {
+      ...next,
+      enabled: false,
+      migrationWarning: AUTOMATION_EXECUTOR_WARNING,
+    };
+    return next;
+  }
+
+  if (!owner) {
+    const nextExecutor = executor?.kind === "agent_session"
+      ? { ...executor, agentId: null }
+      : executor;
+    return {
+      ...next,
+      enabled: false,
+      executor: nextExecutor,
+      createdBy: migrationRecord(next.createdBy) || { kind: "unknown" },
+      migrationWarning: AUTOMATION_OWNER_WARNING,
+    };
+  }
+
+  const executionContext = migrationExecutionContext(next, owner, fallbackAgentId);
+  const prompt = typeof next.prompt === "string"
+    ? next.prompt
+    : typeof executor?.prompt === "string"
+      ? executor.prompt
+      : "";
+  return {
+    ...next,
+    prompt,
+    actorAgentId: owner,
+    executionContext,
+    executor: {
+      ...(executor || {}),
+      kind: "agent_session",
+      agentId: owner,
+      prompt,
+      model: Object.prototype.hasOwnProperty.call(next, "model")
+        ? migrationClone(next.model ?? "")
+        : migrationClone(executor?.model ?? ""),
+      executionContext,
+    },
+    createdBy: migrationRecord(next.createdBy) && next.createdBy.kind !== "unknown"
+      ? next.createdBy
+      : { kind: "agent", agentId: owner },
+    ...(next.migrationWarning?.code === AUTOMATION_OWNER_WARNING.code ? { migrationWarning: undefined } : {}),
+  };
+}
+
+function repairAutomationOwnershipFile(jobsPath, fallbackAgentId, log) {
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(jobsPath, "utf-8"));
+  } catch (err) {
+    if (err.code !== "ENOENT") {
+      log?.(`[migrations] #39 skipped invalid cron-jobs.json at ${jobsPath} (${err.message})`);
+    }
+    return { changed: false, patchedJobs: 0 };
+  }
+  if (!Array.isArray(data.jobs)) return { changed: false, patchedJobs: 0 };
+
+  let patchedJobs = 0;
+  const jobs = data.jobs.map((job) => {
+    const next = repairAutomationJobForOwnership(job, fallbackAgentId);
+    if (Object.prototype.hasOwnProperty.call(next, "migrationWarning") && next.migrationWarning === undefined) {
+      delete next.migrationWarning;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(job)) patchedJobs++;
+    return next;
+  });
+  if (!patchedJobs) return { changed: false, patchedJobs: 0 };
+
+  atomicWriteSync(jobsPath, JSON.stringify({ ...data, jobs }, null, 2) + "\n");
+  return { changed: true, patchedJobs };
+}
+
 const MIGRATION_SAFE_SKILL_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
 function sanitizeMigrationSkillName(raw, fallback = "skill") {
@@ -2218,6 +2435,85 @@ function collectAgentSessionMetaPaths(agentsDir) {
     }
   }
   return out;
+}
+
+function migrateSessionPermissionModeSidecars(ctx) {
+  const { agentsDir, log } = ctx;
+  const metaPaths = collectAgentSessionMetaPaths(agentsDir);
+  let patched = 0;
+  for (const metaPath of metaPaths) {
+    patched += repairSessionMetaPermissionModes(metaPath, log);
+  }
+  log?.(`[migrations] #40: session permission sidecars canonicalized (${patched})`);
+}
+
+function repairSessionMetaPermissionModes(metaPath, log) {
+  let raw;
+  try {
+    raw = fs.readFileSync(metaPath, "utf-8");
+  } catch {
+    return 0;
+  }
+
+  let meta;
+  try {
+    meta = JSON.parse(raw);
+  } catch (err) {
+    log?.(`[migrations] #40: skipped unreadable session-meta ${metaPath}: ${err.message}`);
+    return 0;
+  }
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return 0;
+
+  let patched = 0;
+  for (const [sessionFile, entry] of Object.entries(meta) as [string, any][]) {
+    if (!shouldCanonicalizeSessionPermissionMode(entry)) continue;
+    const permissionMode = normalizeSessionPermissionMode(entry);
+    const accessMode = legacyAccessModeFromPermissionMode(permissionMode);
+    const planMode = permissionMode === SESSION_PERMISSION_MODES.READ_ONLY;
+    if (
+      entry.permissionMode === permissionMode
+      && entry.accessMode === accessMode
+      && entry.planMode === planMode
+    ) {
+      continue;
+    }
+    meta[sessionFile] = {
+      ...entry,
+      permissionMode,
+      accessMode,
+      planMode,
+    };
+    patched++;
+  }
+
+  if (patched === 0) return 0;
+  backupSessionMetaBeforeV40(metaPath, raw, log);
+  const tmp = metaPath + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(meta, null, 2) + "\n", "utf-8");
+  fs.renameSync(tmp, metaPath);
+  return patched;
+}
+
+function shouldCanonicalizeSessionPermissionMode(entry) {
+  return entry
+    && typeof entry === "object"
+    && !Array.isArray(entry)
+    && (
+      typeof entry.permissionMode === "string"
+      || typeof entry.accessMode === "string"
+      || typeof entry.planMode === "boolean"
+    );
+}
+
+function backupSessionMetaBeforeV40(metaPath, raw, log) {
+  const backupPath = `${metaPath}.pre-v40.bak`;
+  try {
+    fs.writeFileSync(backupPath, raw, { encoding: "utf-8", flag: "wx" });
+  } catch (err) {
+    if (err.code === "EEXIST") return;
+    log?.(`[migrations] #40: failed to write session-meta backup ${backupPath}: ${err.message}`);
+    throw err;
+  }
 }
 
 function repairSessionMetaThinkingLevels(metaPath, log) {

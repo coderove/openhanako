@@ -1,4 +1,3 @@
-// @ts-nocheck
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -18,16 +17,16 @@ const emitSessionShutdownMock = vi.fn(async (session) => {
 const PNG_BASE64 = "iVBORw0KGgo=";
 
 vi.mock("../lib/pi-sdk/index.js", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal() as any;
   return {
     ...actual,
-    createAgentSession: (...args) => createAgentSessionMock(...args),
+    createAgentSession: (...args: any[]) => createAgentSessionMock(...args),
     SessionManager: {
       ...actual.SessionManager,
-      create: (...args) => sessionManagerCreateMock(...args),
-      open: (...args) => sessionManagerOpenMock(...args),
+      create: (...args: any[]) => sessionManagerCreateMock(...args),
+      open: (...args: any[]) => sessionManagerOpenMock(...args),
     },
-    emitSessionShutdown: (...args) => emitSessionShutdownMock(...args),
+    emitSessionShutdown: (...args: any[]) => (emitSessionShutdownMock as any)(...args),
     resizeModelImageInput: async (image) => ({
       data: image.data,
       mimeType: image.mimeType,
@@ -206,7 +205,7 @@ describe("BridgeSessionManager teardown", () => {
   it("emits normal bridge turns through the desktop chat stream contract", async () => {
     const agent = makeAgent(rootDir);
     const mgrPath = path.join(agent.sessionDir, "bridge", "owner", "stream.jsonl");
-    const deps = makeDeps(agent);
+    const deps = makeDeps(agent) as any;
     deps.emitEvent = vi.fn();
     const manager = new BridgeSessionManager(deps);
     sessionManagerCreateMock.mockReturnValue({ getSessionFile: () => mgrPath });
@@ -269,8 +268,61 @@ describe("BridgeSessionManager teardown", () => {
     );
   });
 
-  it("notifies the owner bridge memory ticker after a successful external turn", async () => {
+  it("adds Bridge-facing /apply details from automation suggestion tool results", async () => {
     const agent = makeAgent(rootDir);
+    const mgrPath = path.join(agent.sessionDir, "bridge", "owner", "automation-suggestion.jsonl");
+    const manager = new BridgeSessionManager(makeDeps(agent));
+    sessionManagerCreateMock.mockReturnValue({ getSessionFile: () => mgrPath });
+
+    const subscribers = [];
+    const session = {
+      model: { input: ["text"] },
+      prompt: vi.fn(async () => {
+        for (const fn of subscribers) {
+          fn({
+            type: "tool_execution_end",
+            toolName: "automation",
+            isError: false,
+            result: {
+              details: {
+                automationSuggestion: {
+                  suggestionId: "automation_suggestion_1",
+                  shortCode: "3827",
+                  operation: "create",
+                  jobData: {
+                    type: "cron",
+                    schedule: "0 12 * * *",
+                    label: "每日吃饭提醒",
+                    prompt: "该吃饭啦！记得好好吃饭，照顾好自己。",
+                    actorAgentId: "agent-a",
+                  },
+                },
+              },
+            },
+          });
+        }
+      }),
+      subscribe: vi.fn((fn) => {
+        subscribers.push(fn);
+        return vi.fn();
+      }),
+      dispose: vi.fn(),
+      sessionManager: { getSessionFile: () => mgrPath },
+    };
+    createAgentSessionMock.mockResolvedValue({ session });
+
+    const reply = await manager.executeExternalMessage("create reminder", "tg_dm_owner@agent-a", null, { agentId: "agent-a" });
+
+    expect(reply).toContain("我准备了一项自动任务建议");
+    expect(reply).toContain("标题：每日吃饭提醒");
+    expect(reply).toContain("建议ID：3827");
+    expect(reply).toContain("回复 /apply 即可创建这个任务。");
+    expect(reply).toContain("/apply 3827");
+    expect(reply).not.toContain("/confirm");
+  });
+
+  it("notifies the owner bridge memory ticker after a successful external turn", async () => {
+    const agent = makeAgent(rootDir) as any;
     agent.memoryTicker = {
       notifyTurn: vi.fn(),
     };
@@ -787,7 +839,7 @@ describe("BridgeSessionManager teardown", () => {
             signal.addEventListener("abort", () => {
               const err = new Error("This operation was aborted");
               err.name = "AbortError";
-              err.type = "aborted";
+              (err as any).type = "aborted";
               reject(err);
             }, { once: true });
           });
@@ -826,7 +878,7 @@ describe("BridgeSessionManager teardown", () => {
 
   it("owner bridge session prompt snapshot uses the same home cwd as execution", async () => {
     const agent = makeAgent(rootDir);
-    agent.buildSystemPrompt = vi.fn(({ cwdOverride } = {}) => `system prompt @ ${cwdOverride ?? "missing"}`);
+    agent.buildSystemPrompt = vi.fn(({ cwdOverride }: any = {}) => `system prompt @ ${cwdOverride ?? "missing"}`);
     const mgrPath = path.join(agent.sessionDir, "bridge", "owner", "s-home.jsonl");
     const manager = new BridgeSessionManager(makeDeps(agent));
     sessionManagerCreateMock.mockReturnValue({ getSessionFile: () => mgrPath });
@@ -1058,12 +1110,12 @@ describe("BridgeSessionManager teardown", () => {
   });
 
   it("owner bridge tools follow the master memory switch instead of session memory state", async () => {
-    const agent = makeAgent(rootDir);
+    const agent = makeAgent(rootDir) as any;
     agent.memoryMasterEnabled = true;
     const plainTool = { name: "plain_custom" };
     const memoryTool = { name: "search_memory" };
     agent.tools = [plainTool];
-    agent.getToolsSnapshot = vi.fn(({ forceMemoryEnabled } = {}) => (
+    agent.getToolsSnapshot = vi.fn(({ forceMemoryEnabled }: any = {}) => (
       forceMemoryEnabled ? [plainTool, memoryTool] : [plainTool]
     ));
     const buildTools = vi.fn((_cwd, customTools) => ({
@@ -1099,7 +1151,7 @@ describe("BridgeSessionManager teardown", () => {
     expect(createAgentSessionMock.mock.calls[0][0].customTools.map((tool) => tool.name)).toContain("search_memory");
   });
 
-  it("owner bridge sessions derive permission mode from bridge read-only settings", async () => {
+  it("owner bridge sessions default to auto permission mode when bridge read-only is off", async () => {
     const agent = makeAgent(rootDir);
     const buildTools = vi.fn(() => ({
       tools: [],
@@ -1128,8 +1180,41 @@ describe("BridgeSessionManager teardown", () => {
     await manager.executeExternalMessage("hello", "bridge-k-permission", null, { agentId: "agent-a" });
 
     expect(buildTools).toHaveBeenCalledOnce();
-    const buildOpts = buildTools.mock.calls[0][2];
-    expect(buildOpts.getPermissionMode()).toBe("operate");
+    const buildOpts = (buildTools.mock.calls[0] as any)[2];
+    expect(buildOpts!.getPermissionMode()).toBe("auto");
+  });
+
+  it("owner bridge sessions honor explicit bridge auto permission mode", async () => {
+    const agent = makeAgent(rootDir);
+    const buildTools = vi.fn(() => ({
+      tools: [],
+      customTools: [],
+    }));
+    const deps = {
+      ...makeDeps(agent),
+      getPreferences: () => ({ thinking_level: "medium", bridge: { permissionMode: "auto", readOnly: true } }),
+      buildTools,
+    };
+    const mgrPath = path.join(agent.sessionDir, "bridge", "owner", "s-permission-auto.jsonl");
+    const manager = new BridgeSessionManager(deps);
+    sessionManagerCreateMock.mockReturnValue({ getSessionFile: () => mgrPath });
+
+    createAgentSessionMock.mockResolvedValue({
+      session: {
+        model: { input: ["text"] },
+        prompt: vi.fn(async () => {}),
+        subscribe: vi.fn(() => () => {}),
+        dispose: vi.fn(),
+        sessionManager: { getSessionFile: () => mgrPath },
+        extensionRunner: { hasHandlers: vi.fn(() => false) },
+      },
+    });
+
+    await manager.executeExternalMessage("hello", "bridge-k-permission-auto", null, { agentId: "agent-a" });
+
+    expect(buildTools).toHaveBeenCalledOnce();
+    const buildOpts = (buildTools.mock.calls[0] as any)[2];
+    expect(buildOpts!.getPermissionMode()).toBe("auto");
   });
 
   it("owner bridge tools expose the bridge session path instead of relying on desktop focus", async () => {
@@ -1160,8 +1245,8 @@ describe("BridgeSessionManager teardown", () => {
     await manager.executeExternalMessage("hello", "bridge-k-owner-tools", null, { agentId: "agent-a" });
 
     expect(buildTools).toHaveBeenCalledOnce();
-    const buildOpts = buildTools.mock.calls[0][2];
-    expect(buildOpts.getSessionPath()).toBe(mgrPath);
+    const buildOpts = (buildTools.mock.calls[0] as any)[2];
+    expect(buildOpts!.getSessionPath()).toBe(mgrPath);
   });
 
   it("guest bridge sessions pass canonical off thinking level to the SDK", async () => {
@@ -1238,8 +1323,8 @@ describe("BridgeSessionManager teardown", () => {
     await manager.executeExternalMessage("hello", "bridge-k-read-only", null, { agentId: "agent-a" });
 
     expect(buildTools).toHaveBeenCalledOnce();
-    const buildOpts = buildTools.mock.calls[0][2];
-    expect(buildOpts.getPermissionMode()).toBe("read_only");
+    const buildOpts = (buildTools.mock.calls[0] as any)[2];
+    expect(buildOpts!.getPermissionMode()).toBe("read_only");
   });
 
   it("owner bridge read-only sessions keep full schema and rely on permission wrappers", async () => {

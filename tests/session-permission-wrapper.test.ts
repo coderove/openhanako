@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createApprovalGateway } from "../lib/approval-gateway.ts";
+import { createAutomationTool } from "../lib/tools/automation-tool.ts";
 import { wrapWithSessionPermission } from "../lib/tools/session-permission-wrapper.ts";
 
 const ctx = {
@@ -15,6 +17,15 @@ function makeTool(name = "write") {
   };
 }
 
+function makeAutomationStore() {
+  return {
+    addJob: vi.fn((jobData) => ({ ...jobData, id: "studio_job_1", enabled: true })),
+    updateJob: vi.fn(),
+    getJob: vi.fn(() => null),
+    listJobs: vi.fn(() => []),
+  };
+}
+
 describe("session permission wrapper", () => {
   it("blocks side-effect tools in read-only mode", async () => {
     const tool = makeTool("write");
@@ -26,6 +37,55 @@ describe("session permission wrapper", () => {
 
     expect(tool.execute).not.toHaveBeenCalled();
     expect(result.details.errorCode).toBe("ACTION_BLOCKED_BY_READ_ONLY");
+  });
+
+  it("allows file stat in read-only mode", async () => {
+    const tool = makeTool("file");
+    const [wrapped] = wrapWithSessionPermission([tool], {
+      getPermissionMode: () => "read_only",
+    });
+
+    const result = await wrapped.execute("call-1", { action: "stat", fileId: "sf_1" }, null, null, ctx);
+
+    expect(tool.execute).toHaveBeenCalledOnce();
+    expect(result.details.executed).toBe(true);
+  });
+
+  it("blocks file copy in read-only mode", async () => {
+    const tool = makeTool("file");
+    const [wrapped] = wrapWithSessionPermission([tool], {
+      getPermissionMode: () => "read_only",
+    });
+
+    const result = await wrapped.execute("call-1", { action: "copy", fileId: "sf_1" }, null, null, ctx);
+
+    expect(tool.execute).not.toHaveBeenCalled();
+    expect(result.details.errorCode).toBe("ACTION_BLOCKED_BY_READ_ONLY");
+  });
+
+  it("asks before running the transitional file tool in ask mode", async () => {
+    const tool = makeTool("file");
+    const confirmStore = {
+      create: vi.fn(() => ({
+        confirmId: "confirm-tool-1",
+        promise: Promise.resolve({ action: "confirmed" }),
+      })),
+    };
+    const [wrapped] = wrapWithSessionPermission([tool], {
+      getPermissionMode: () => "ask",
+      getConfirmStore: () => confirmStore,
+      emitEvent: vi.fn(),
+    });
+
+    const result = await wrapped.execute("call-1", { action: "copy", fileId: "sf_1" }, null, null, ctx);
+
+    expect(confirmStore.create).toHaveBeenCalledWith(
+      "tool_action_approval",
+      expect.objectContaining({ toolName: "file" }),
+      "/tmp/session.jsonl",
+    );
+    expect(tool.execute).toHaveBeenCalledOnce();
+    expect(result.details.executed).toBe(true);
   });
 
   it("asks before running side-effect tools in ask mode", async () => {
@@ -119,6 +179,59 @@ describe("session permission wrapper", () => {
     expect(confirmStore.create).not.toHaveBeenCalled();
     expect(tool.execute).toHaveBeenCalledOnce();
     expect(result.details.executed).toBe(true);
+  });
+
+  it("auto mode lets automation draft generation run without a tool-action confirmation", async () => {
+    const store = makeAutomationStore();
+    const confirmStore = { create: vi.fn() };
+    const automationSuggestionStore = {
+      create: vi.fn((entry) => ({
+        ...entry,
+        suggestionId: "automation_suggestion_1",
+        shortCode: "3827",
+      })),
+    };
+    const tool = createAutomationTool(store, {
+      confirmStore,
+      automationSuggestionStore,
+      getAgentId: () => "agent-a",
+      getSessionCwd: () => "/workspace/current",
+      getSessionWorkspaceFolders: () => [],
+    });
+    const [wrapped] = wrapWithSessionPermission([tool], {
+      getPermissionMode: () => "auto",
+      getConfirmStore: () => confirmStore,
+      getApprovalGateway: () => createApprovalGateway(),
+      emitEvent: vi.fn(),
+    });
+
+    const result = await wrapped.execute(
+      "call-automation-draft",
+      {
+        action: "create",
+        scheduleType: "cron",
+        schedule: "0 9 * * *",
+        label: "Morning Review",
+        prompt: "Review my notes.",
+      },
+      null,
+      null,
+      ctx,
+    );
+
+    expect(confirmStore.create).not.toHaveBeenCalled();
+    expect(automationSuggestionStore.create).toHaveBeenCalledWith(expect.objectContaining({
+      sessionPath: "/tmp/session.jsonl",
+      operation: "create",
+      apply: expect.any(Function),
+    }));
+    expect(result.details).toMatchObject({
+      action: "pending_add",
+      suggestionId: "automation_suggestion_1",
+      suggestionShortCode: "3827",
+    });
+    expect(result.details.confirmId).toBeUndefined();
+    expect(store.addJob).not.toHaveBeenCalled();
   });
 
   it("defaults missing permission mode to auto review instead of legacy ask", async () => {
@@ -217,6 +330,34 @@ describe("session permission wrapper", () => {
     });
     expect(tool.execute).toHaveBeenCalledOnce();
     expect(result.details.executed).toBe(true);
+  });
+
+  it("auto mode denies ask_user review results when human approval is disabled", async () => {
+    const tool = makeTool("write");
+    const confirmStore = {
+      create: vi.fn(),
+    };
+    const approvalGateway = {
+      review: vi.fn(async () => ({
+        action: "ask_user",
+        reviewer: "policy",
+        reason: "bridge cannot ask the user",
+        risk: "medium",
+      })),
+    };
+    const [wrapped] = wrapWithSessionPermission([tool], {
+      getPermissionMode: () => "auto",
+      getConfirmStore: () => confirmStore,
+      getApprovalGateway: () => approvalGateway,
+      allowHumanApproval: false,
+    });
+
+    const result = await wrapped.execute("call-1", { path: "notes.md" }, null, null, ctx);
+
+    expect(confirmStore.create).not.toHaveBeenCalled();
+    expect(tool.execute).not.toHaveBeenCalled();
+    expect(result.details.confirmation.status).toBe("ask_user");
+    expect(result.details.confirmation.reason).toBe("bridge cannot ask the user");
   });
 
   // ---- 甲（Codex 式）端到端：permissionContext 透传到 classify ----

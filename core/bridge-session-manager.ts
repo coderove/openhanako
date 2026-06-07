@@ -22,7 +22,7 @@ import {
 import { isAbortLikeError, prepareVisionInputForTextOnlyModel } from "./vision-prepare.ts";
 import { prepareModelImageInputsForPrompt } from "./model-image-preprocess.ts";
 import { withVisionContextInjectionExtension } from "./vision-context-injector.ts";
-import { SESSION_PERMISSION_MODES } from "./session-permission-mode.ts";
+import { normalizeBridgePermissionMode, SESSION_PERMISSION_MODES } from "./session-permission-mode.ts";
 import { uniqueToolNames } from "../shared/tool-categories.ts";
 import { collectMediaItems } from "../lib/tools/media-details.ts";
 import { formatSettingsUpdateText } from "../lib/tools/settings-update-result.ts";
@@ -94,6 +94,102 @@ function buildPromptMediaOptions(opts) {
 function getProviderMessageEndError(event) {
   if (event?.type !== "message_end" || event.message?.stopReason !== "error") return null;
   return event.message.errorMessage || event.message.error?.message || "Unknown error";
+}
+
+function valueText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function valueRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function formatCronDaily(schedule) {
+  const raw = valueText(schedule);
+  const match = raw.match(/^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$/);
+  if (!match) return "";
+  const minute = Number(match[1]);
+  const hour = Number(match[2]);
+  if (!Number.isInteger(minute) || !Number.isInteger(hour) || minute > 59 || hour > 23) return "";
+  return `每天 ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatAutomationSchedule(jobData) {
+  const type = valueText(jobData.type || jobData.scheduleType);
+  const schedule = jobData.schedule;
+  if (type === "cron") return formatCronDaily(schedule) || valueText(schedule);
+  if (type === "every") {
+    const ms = typeof schedule === "number" ? schedule : Number(schedule);
+    if (Number.isFinite(ms) && ms > 0) {
+      const minutes = Math.round(ms / 60_000);
+      if (minutes > 0) return `每 ${minutes} 分钟`;
+    }
+  }
+  if (type === "at") {
+    const date = new Date(schedule);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleString("zh-CN", { hour12: false });
+  }
+  return valueText(schedule);
+}
+
+function formatBridgePlatform(context) {
+  const platform = valueText(context?.platform);
+  if (platform === "wechat") return "微信";
+  if (platform === "feishu") return "飞书";
+  if (platform === "telegram") return "Telegram";
+  if (platform === "qq") return "QQ";
+  return platform;
+}
+
+function resolveAutomationAgentLabel(jobData, deps) {
+  const executor = valueRecord(jobData.executor);
+  const agentId = valueText(jobData.actorAgentId) || valueText(executor.agentId);
+  if (!agentId) return "";
+  const agent = deps?.getAgentById?.(agentId);
+  return valueText(agent?.agentName) || valueText(agent?.name) || agentId;
+}
+
+function formatAutomationSuggestionText(payload, deps: any = {}) {
+  const suggestions = (Array.isArray(payload) ? payload : [payload])
+    .filter((item) => item && typeof item === "object");
+  if (!suggestions.length) return "";
+
+  const blocks = suggestions.map((suggestion, index) => {
+    const jobData = valueRecord(suggestion.jobData);
+    const title = valueText(jobData.label) || valueText(suggestion.title) || "未命名自动任务";
+    const schedule = formatAutomationSchedule(jobData);
+    const agentLabel = resolveAutomationAgentLabel(jobData, deps);
+    const prompt = valueText(jobData.prompt) || valueText(suggestion.description);
+    const shortCode = valueText(suggestion.shortCode) || valueText(suggestion.suggestionShortCode);
+    const platform = formatBridgePlatform(deps.bridgeContext);
+    const lines = suggestions.length > 1 ? [`${index + 1}.`] : [];
+    lines.push(`标题：${title}`);
+    if (schedule) lines.push(`时间：${schedule}`);
+    if (agentLabel) lines.push(`执行助手：${agentLabel}`);
+    if (platform) lines.push(`平台：${platform}`);
+    if (prompt) lines.push(`任务内容：${prompt}`);
+    if (shortCode) lines.push(`建议ID：${shortCode}`);
+    return lines.join("\n");
+  });
+
+  if (suggestions.length === 1) {
+    const shortCode = valueText(suggestions[0].shortCode) || valueText(suggestions[0].suggestionShortCode);
+    return [
+      "我准备了一项自动任务建议：",
+      blocks[0],
+      "",
+      "回复 /apply 即可创建这个任务。",
+      ...(shortCode ? [`也可以回复 /apply ${shortCode} 精确创建这一项。`] : []),
+    ].join("\n");
+  }
+
+  return [
+    `我准备了 ${suggestions.length} 项自动任务建议：`,
+    blocks.join("\n\n"),
+    "",
+    "回复 /apply 创建最新这一项。",
+    "也可以回复 /apply <建议ID> 精确创建。",
+  ].join("\n");
 }
 
 function recordBridgeAssistantUsage({ ledger, event, sessionPath, agent, model, bridgeContext }) {
@@ -666,7 +762,8 @@ export class BridgeSessionManager {
     const bridgeContext = opts.bridgeContext || null;
     const promptSnapshot = this._buildOwnerPromptSnapshot(agent, homeCwd, bridgeContext);
     const state = {
-      bridgeReadOnly: prefs?.bridge?.readOnly === true,
+      bridgePermissionMode: normalizeBridgePermissionMode(prefs?.bridge || {}),
+      bridgeReadOnly: normalizeBridgePermissionMode(prefs?.bridge || {}) === SESSION_PERMISSION_MODES.READ_ONLY,
       experienceEnabled: agent.experienceEnabled === true,
       memoryMasterEnabled: agent.memoryMasterEnabled !== false,
       model: chatRef || null,
@@ -902,6 +999,16 @@ export class BridgeSessionManager {
           }
         } else if (event.type === "tool_execution_end" && !event.isError) {
           toolMediaUrls.push(...collectMediaItems(event.result?.details?.media));
+          const automationSuggestionText = formatAutomationSuggestionText(
+            event.result?.details?.automationSuggestion || event.result?.details?.automationSuggestions,
+            {
+              getAgentById: this._deps.getAgentById,
+              bridgeContext,
+            },
+          );
+          if (automationSuggestionText) {
+            capturedText += (capturedText ? "\n\n" : "") + automationSuggestionText;
+          }
           const card = event.result?.details?.card;
           if (card?.description) {
             capturedText += (capturedText ? "\n\n" : "") + card.description;
@@ -1135,10 +1242,7 @@ export class BridgeSessionManager {
    */
   _buildOwnerSessionOpts(agent, mm, homeCwd, sessionPathRef = { current: null }, targetModelRef = { current: null }, opts: any = {}) {
     const prefs = this._deps.getPreferences();
-    const bridgeReadOnly = prefs?.bridge?.readOnly === true;
-    const bridgePermissionMode = bridgeReadOnly
-      ? SESSION_PERMISSION_MODES.READ_ONLY
-      : SESSION_PERMISSION_MODES.OPERATE;
+    const bridgePermissionMode = normalizeBridgePermissionMode(prefs?.bridge || {});
     const agentToolsSnapshot = typeof agent.getToolsSnapshot === "function"
       ? agent.getToolsSnapshot({
         forceMemoryEnabled: agent.memoryMasterEnabled !== false,
@@ -1154,6 +1258,7 @@ export class BridgeSessionManager {
         agentDir: agent.agentDir,
         getSessionPath: () => sessionPathRef.current,
         getPermissionMode: () => bridgePermissionMode,
+        allowHumanApproval: false,
         bridgeContext: opts.bridgeContext || null,
       },
     );

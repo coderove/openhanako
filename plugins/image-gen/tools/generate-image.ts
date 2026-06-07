@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * plugins/image-gen/tools/generate-image.js
  *
@@ -23,6 +22,7 @@ export const parameters = {
     quality:    { type: "string", description: t("toolDef.generateImage.qualityDesc") },
     model:      { type: "string", description: t("toolDef.generateImage.modelDesc") },
     provider:   { type: "string", description: t("toolDef.generateImage.providerDesc") },
+    suggestedFilename: { type: "string", description: t("toolDef.generateImage.suggestedFilenameDesc") },
   },
   required: ["prompt"],
 };
@@ -30,7 +30,7 @@ export const parameters = {
 export async function execute(input, ctx) {
   let result;
   try {
-    result = await submitImageGeneration({ input, ctx });
+    result = await submitImageGeneration({ input, ctx } as any);
   } catch (err) {
     return { content: [{ type: "text", text: err?.message || String(err) }] };
   }

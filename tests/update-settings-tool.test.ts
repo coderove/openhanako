@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * update-settings-tool.js 注册表单元测试
  *
@@ -9,7 +8,7 @@ import { loadLocale } from "../lib/i18n.ts";
 
 // ── Mock 工厂 ──
 
-function makeMockPrefs(initial = {}) {
+function makeMockPrefs( initial: any = {}) {
   const store = { ...initial };
   return {
     getPreferences: () => ({ ...store }),
@@ -33,7 +32,7 @@ function makeMockPrefs(initial = {}) {
   };
 }
 
-function makeMockEngine(overrides = {}) {
+function makeMockEngine( overrides: any = {}) {
   const prefs = makeMockPrefs(overrides.prefsData || {});
   const focusAgentId = overrides.currentAgentId || "focus";
   const eventBus = overrides.eventBus || { request: vi.fn() };
@@ -95,7 +94,7 @@ describe("update-settings-tool", () => {
     createUpdateSettingsTool = mod.createUpdateSettingsTool;
   });
 
-  function buildTool(engineOpts = {}, confirmAction = "confirmed") {
+  function buildTool( engineOpts: any = {}, confirmAction = "confirmed") {
     const engine = makeMockEngine(engineOpts);
     const confirmStore = makeMockConfirmStore(confirmAction);
     const tool = createUpdateSettingsTool({
@@ -139,33 +138,53 @@ describe("update-settings-tool", () => {
     expect(result.content[0].text).toContain("Locale");
   });
 
-  describe("sandbox toggle — this 绑定 + boolean 转换", () => {
-    it("apply sandbox=false 实际关闭沙盒", async () => {
+  describe("sandbox security boundary", () => {
+    it("does not expose sandbox controls through settings search", async () => {
+      const { tool } = buildTool({ prefsData: { sandbox: true, sandbox_network: false } });
+
+      const securityResult = await tool.execute("c-sandbox-search-security", { action: "search", query: "security" });
+      const networkResult = await tool.execute("c-sandbox-search-network", { action: "search", query: "sandbox" });
+
+      expect(securityResult.content[0].text).not.toContain("sandbox");
+      expect(networkResult.content[0].text).not.toContain("sandbox_network");
+    });
+
+    it("rejects legacy direct sandbox=false apply without mutating preferences", async () => {
       const { tool, engine } = buildTool({ prefsData: { sandbox: true } });
-      await tool.execute("c1", { action: "apply", key: "sandbox", value: "false" });
+      const result = await tool.execute("c1", { action: "apply", key: "sandbox", value: "false" });
 
-      expect(engine.setSandbox).toHaveBeenCalled();
-      // 传入的是 boolean false（调度侧 toggle parse）
-      expect(engine.setSandbox.mock.calls[0][0]).toBe(false);
-      // preferences 存的也是 boolean false
-      expect(engine._prefs._store.sandbox).toBe(false);
+      expect(engine.setSandbox).not.toHaveBeenCalled();
+      expect(engine._prefs._store.sandbox).toBe(true);
+      expect(result.details.settingsUpdate).toMatchObject({
+        status: "blocked",
+        key: "sandbox",
+      });
+      expect(result.content[0].text).toContain("Settings");
     });
 
-    it("apply sandbox=true 存入 boolean true", async () => {
+    it("rejects legacy direct sandbox=true apply without mutating preferences", async () => {
       const { tool, engine } = buildTool({ prefsData: { sandbox: false } });
-      await tool.execute("c2", { action: "apply", key: "sandbox", value: "true" });
+      const result = await tool.execute("c2", { action: "apply", key: "sandbox", value: "true" });
 
-      expect(engine.setSandbox.mock.calls[0][0]).toBe(true);
-      expect(engine._prefs._store.sandbox).toBe(true);
+      expect(engine.setSandbox).not.toHaveBeenCalled();
+      expect(engine._prefs._store.sandbox).toBe(false);
+      expect(result.details.settingsUpdate).toMatchObject({
+        status: "blocked",
+        key: "sandbox",
+      });
     });
 
-    it("apply sandbox_network=true 只开启沙盒联网子开关", async () => {
+    it("rejects legacy direct sandbox_network apply without mutating preferences", async () => {
       const { tool, engine } = buildTool({ prefsData: { sandbox: true, sandbox_network: false } });
-      await tool.execute("c-network", { action: "apply", key: "sandbox_network", value: "true" });
+      const result = await tool.execute("c-network", { action: "apply", key: "sandbox_network", value: "true" });
 
-      expect(engine.setSandboxNetwork).toHaveBeenCalledWith(true);
-      expect(engine._prefs._store.sandbox_network).toBe(true);
+      expect(engine.setSandboxNetwork).not.toHaveBeenCalled();
+      expect(engine._prefs._store.sandbox_network).toBe(false);
       expect(engine._prefs._store.sandbox).toBe(true);
+      expect(result.details.settingsUpdate).toMatchObject({
+        status: "blocked",
+        key: "sandbox_network",
+      });
     });
   });
 

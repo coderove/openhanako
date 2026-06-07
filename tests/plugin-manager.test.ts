@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import os from "os";
@@ -29,7 +28,7 @@ describe("scan", () => {
     fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({
       id: "my-plugin", name: "My Plugin", version: "1.0.0",
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     const plugins = pm.scan();
     expect(plugins).toHaveLength(1);
     expect(plugins[0].id).toBe("my-plugin");
@@ -41,7 +40,7 @@ describe("scan", () => {
     fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
     fs.writeFileSync(path.join(dir, "tools", "hello.js"),
       'export const name = "hello";\nexport const description = "test";\nexport const parameters = {};\nexport async function execute() { return "hi"; }\n');
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     const plugins = pm.scan();
     expect(plugins).toHaveLength(1);
     expect(plugins[0].id).toBe("simple-tool");
@@ -53,7 +52,7 @@ describe("scan", () => {
     fs.mkdirSync(path.join(dir, "skills"), { recursive: true });
     fs.writeFileSync(path.join(dir, "tools", "t.js"), "export const name='t';");
     fs.writeFileSync(path.join(dir, "skills", "s.md"), "---\nname: s\n---\n# S");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     const plugins = pm.scan();
     expect(plugins[0].contributions).toContain("tools");
     expect(plugins[0].contributions).toContain("skills");
@@ -62,7 +61,7 @@ describe("scan", () => {
   it("skips hidden directories and non-directories", async () => {
     fs.mkdirSync(path.join(pluginsDir, ".hidden"), { recursive: true });
     fs.writeFileSync(path.join(pluginsDir, "README.md"), "hi");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     expect(pm.scan()).toHaveLength(0);
   });
 
@@ -70,7 +69,7 @@ describe("scan", () => {
     const dir = path.join(pluginsDir, "bad");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "manifest.json"), "NOT JSON");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     expect(pm.scan()).toHaveLength(0);
   });
 
@@ -82,7 +81,7 @@ describe("scan", () => {
       name: "OpenClaw Voice",
       configSchema: { type: "object", additionalProperties: false },
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
 
     pm.scan();
     await pm.loadAll();
@@ -101,6 +100,68 @@ describe("scan", () => {
 });
 
 describe("loadAll", () => {
+  it("loads real bundled image-gen, beautify, mcp, and office plugin contributions", async () => {
+    const pm = new PluginManager({
+      pluginsDirs: [path.resolve("plugins")],
+      dataDir,
+      bus: await makeBus(),
+      runtimeContext: {
+        serverId: "server_builtin_smoke",
+        serverNodeId: "node_builtin_smoke",
+        userId: "user_builtin_smoke",
+        studioId: "studio_builtin_smoke",
+        connectionKind: "local",
+        credentialKind: "loopback_token",
+      },
+    } as any);
+
+    pm.scan();
+    try {
+      await pm.loadAll();
+
+      const diagnosticsById = new Map(pm.getDiagnostics().map((entry) => [entry.id, entry]));
+      for (const id of ["image-gen", "beautify", "mcp", "office"]) {
+        expect(diagnosticsById.get(id)).toMatchObject({
+          id,
+          source: "builtin",
+          hidden: true,
+          status: "loaded",
+          error: null,
+        });
+      }
+
+      const toolNames = pm.getAllTools().map((tool) => tool.name);
+      expect(toolNames).toEqual(expect.arrayContaining([
+        "image-gen_generate-image",
+        "image-gen_generate-video",
+        "beautify_create-cover",
+        "beautify_apply-cover-candidate",
+        "beautify_get-cover-style-guide",
+        "beautify_list-capabilities",
+        "office_list-capabilities",
+        "office_read-document",
+        "office_html-to-pdf",
+      ]));
+      expect(pm.getSkillPaths()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ pluginId: "image-gen", builtin: true }),
+      ]));
+      expect(pm.routeRegistry.has("image-gen")).toBe(true);
+      expect(pm.routeRegistry.has("mcp")).toBe(true);
+      expect(pm.getConfigSchema("image-gen")?.properties).toHaveProperty("defaultImageModel");
+      expect(pm.getConfigSchema("beautify")?.properties).toHaveProperty("coverResolution");
+      expect(pm.getSettingsTabs()).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          pluginId: "mcp",
+          nativeComponent: "mcp.settings",
+        }),
+      ]));
+    } finally {
+      for (const id of ["image-gen", "beautify", "mcp", "office"]) {
+        await pm.unloadPlugin(id, { source: "builtin" });
+      }
+    }
+  });
+
   it("loads plugin with index.js and calls onload", async () => {
     const dir = path.join(pluginsDir, "stateful");
     fs.mkdirSync(dir, { recursive: true });
@@ -109,7 +170,7 @@ describe("loadAll", () => {
         async onload() { this.loaded = true; }
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("stateful");
@@ -175,7 +236,7 @@ describe("loadAll", () => {
       dataDir,
       bus: await makeBus(),
       runtimeContext,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -217,7 +278,7 @@ describe("loadAll", () => {
       dataDir,
       bus: await makeBus(),
       getSessionPath: () => "/sessions/focus.jsonl",
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -244,7 +305,7 @@ describe("loadAll", () => {
       pluginsDir,
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -266,7 +327,7 @@ describe("loadAll", () => {
         }
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     await pm.unloadPlugin("reg-test");
@@ -283,7 +344,7 @@ describe("loadAll", () => {
     const good = path.join(pluginsDir, "good-plugin");
     fs.mkdirSync(path.join(good, "tools"), { recursive: true });
     fs.writeFileSync(path.join(good, "tools", "t.js"), "export const name='t';");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("bad-plugin").status).toBe("failed");
@@ -303,7 +364,7 @@ describe("loadAll", () => {
       dataDir,
       bus: await makeBus(),
       lifecycleTimeoutMs: 20,
-    });
+    } as any);
     pm.scan();
 
     const result = await Promise.race([
@@ -321,7 +382,7 @@ describe("loadAll", () => {
     const dir = path.join(pluginsDir, "static-only");
     fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
     fs.writeFileSync(path.join(dir, "tools", "t.js"), "export const name='t';");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("static-only").status).toBe("loaded");
@@ -348,7 +409,7 @@ describe("loadAll", () => {
       export const parameters = {};
       export async function execute() { return "ok"; }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -370,7 +431,7 @@ describe("loadAll", () => {
         async onload() { globalThis.__legacyLifecycleActivated = true; }
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -398,7 +459,7 @@ describe("loadAll", () => {
     fs.writeFileSync(path.join(dir, "routes", "page.js"), `
       export function register(app) { app.get("/page", (c) => c.text("ok")); }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -415,7 +476,7 @@ describe("loadAll", () => {
     fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
     fs.writeFileSync(path.join(dir, "tools", "t.js"),
       'export const name = "t";\nexport const description = "test";\nexport const parameters = {};\nexport async function execute() { return "ok"; }\n');
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("ctx-test");
@@ -438,7 +499,7 @@ describe("tool loading", () => {
       export const parameters = { type: "object", properties: { query: { type: "string" } } };
       export async function execute(input) { return "results for " + input.query; }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const tools = pm.getAllTools();
@@ -459,7 +520,7 @@ describe("tool loading", () => {
       }
       export async function execute() { return "ok"; }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const tool = pm.getAllTools()[0];
@@ -479,7 +540,7 @@ describe("tool loading", () => {
         return (ctx.sessionPath || "") + ":" + input.text;
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -512,7 +573,7 @@ describe("tool loading", () => {
         return input.title;
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -549,7 +610,7 @@ describe("tool loading", () => {
         return { content: [{ type: "text", text: file.fileId || file.id }] };
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus(), registerSessionFile });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus(), registerSessionFile } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -600,7 +661,7 @@ describe("tool loading", () => {
         };
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus(), registerSessionFile });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus(), registerSessionFile } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -632,7 +693,7 @@ describe("tool loading", () => {
     const dir = path.join(pluginsDir, "bad-tool");
     fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
     fs.writeFileSync(path.join(dir, "tools", "bad.js"), "export const x = 1;");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getAllTools()).toHaveLength(0);
@@ -645,7 +706,7 @@ describe("skill paths", () => {
     fs.mkdirSync(path.join(dir, "skills", "my-skill"), { recursive: true });
     fs.writeFileSync(path.join(dir, "skills", "my-skill", "SKILL.md"),
       "---\nname: my-skill\ndescription: test\n---\n# My Skill");
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const paths = pm.getSkillPaths();
@@ -664,7 +725,7 @@ describe("command loading", () => {
       export const description = "Say hello";
       export async function execute(args, ctx) { return "Hello " + args; }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const cmds = pm.getAllCommands();
@@ -689,7 +750,7 @@ describe("extensions", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const factories = pm.getExtensionFactories();
@@ -708,7 +769,7 @@ describe("extensions", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getExtensionFactories()).toHaveLength(0);
@@ -734,7 +795,7 @@ describe("extensions", () => {
       pluginsDirs: [builtinDir, communityDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getExtensionFactories()).toHaveLength(0);
@@ -751,7 +812,7 @@ describe("extensions", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getExtensionFactories()).toHaveLength(1);
@@ -771,7 +832,7 @@ describe("configuration", () => {
         enabled: { type: "boolean", default: true, title: "Enabled" },
       }}}
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const [plugin] = pm.listPlugins();
@@ -788,7 +849,7 @@ describe("configuration", () => {
       id: "cfg", name: "C", version: "0.1.0",
       contributes: { configuration: { properties: { x: { type: "string" } } } }
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const all = pm.getAllConfigSchemas();
@@ -806,7 +867,7 @@ describe("configuration", () => {
         enabled: { type: "boolean", default: true },
       } } }
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -824,7 +885,7 @@ describe("agent templates", () => {
     fs.writeFileSync(path.join(dir, "agents", "translator.json"), JSON.stringify({
       name: "Translator", systemPrompt: "You are a translator.", defaultModel: "gpt-4o",
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const templates = pm.getAgentTemplates();
@@ -845,7 +906,7 @@ describe("provider declarations", () => {
       export const defaultBaseUrl = "https://api.my-llm.com/v1";
       export const defaultApi = "openai-completions";
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const providers = pm.getProviderPlugins();
@@ -872,7 +933,7 @@ describe("permission enforcement", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("core-plug");
@@ -914,7 +975,7 @@ describe("permission enforcement", () => {
       pluginsDirs: [builtinDir, communityDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("comm-plug");
@@ -957,7 +1018,7 @@ describe("permission enforcement", () => {
       dataDir,
       bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("fa-plug");
@@ -990,7 +1051,7 @@ describe("permission enforcement", () => {
       dataDir,
       bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("fa-plug-on");
@@ -1021,7 +1082,7 @@ describe("permission enforcement", () => {
       dataDir,
       bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("disabled-plug");
@@ -1049,7 +1110,7 @@ describe("permission enforcement", () => {
       dataDir,
       bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("builtin-always");
@@ -1062,7 +1123,7 @@ describe("permission enforcement", () => {
 
 describe("addTool (dynamic registration)", () => {
   it("dynamically registered tool appears in getAllTools", async () => {
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     const remove = pm.addTool("mcp-bridge", {
       name: "search",
       description: "MCP search tool",
@@ -1086,7 +1147,7 @@ describe("addTool (dynamic registration)", () => {
       name: "Dynamic Invoke",
       version: "1.0.0",
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("dyn-invoke");
@@ -1120,7 +1181,7 @@ describe("addTool (dynamic registration)", () => {
       name: "MCP Bridge",
       version: "1.0.0",
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("mcp-bridge");
@@ -1158,7 +1219,7 @@ describe("addTool (dynamic registration)", () => {
       name: "Dynamic Pi Context",
       version: "1.0.0",
     }));
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     const entry = pm.getPlugin("dynamic-pi-context");
@@ -1206,7 +1267,7 @@ describe("addTool (dynamic registration)", () => {
         }
       }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -1221,7 +1282,7 @@ describe("addTool (dynamic registration)", () => {
 
 // ── Hot operations ──────────────────────────────────────────────────────────
 
-function createMockPrefs(overrides = {}) {
+function createMockPrefs( overrides: any = {}) {
   return {
     _data: {
       allow_full_access_plugins: false,
@@ -1235,7 +1296,7 @@ function createMockPrefs(overrides = {}) {
   };
 }
 
-function writeToolRoutePlugin(root, id, { text, sourceName = text } = {}) {
+function writeToolRoutePlugin(root: any, id: any, { text, sourceName = text }: any = {}) {
   const dir = path.join(root, id);
   fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
   fs.mkdirSync(path.join(dir, "routes"), { recursive: true });
@@ -1277,7 +1338,7 @@ function writeConfigPlugin(root, id, version = "1.0.0") {
 
 describe("hot operations", () => {
   it("installPlugin loads a new plugin at runtime", async () => {
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.listPlugins()).toHaveLength(0);
@@ -1321,7 +1382,7 @@ describe("hot operations", () => {
         getDisabledPlugins: () => [],
         getAllowFullAccessPlugins: () => false,
       },
-    });
+    } as any);
 
     const entry = await pm.installPlugin(dir, { source: "dev", allowFullAccess: true });
 
@@ -1355,7 +1416,7 @@ describe("hot operations", () => {
         getDisabledPlugins: () => [],
         getAllowFullAccessPlugins: () => true,
       },
-    });
+    } as any);
 
     const entry = await pm.installPlugin(dir, { source: "dev", allowFullAccess: false });
 
@@ -1374,7 +1435,7 @@ describe("hot operations", () => {
       dataDir,
       bus: await makeBus(),
       preferencesManager: createMockPrefs({ allow_full_access_plugins: true }),
-    });
+    } as any);
 
     await pm.installPlugin(communityDir, { source: "community" });
     await pm.installPlugin(devDir, { source: "dev", allowFullAccess: true });
@@ -1434,7 +1495,7 @@ describe("hot operations", () => {
       pluginsDirs: [communityRoot, devRoot],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
 
     await pm.installPlugin(communityDir, { source: "community" });
     pm.setConfig("config-shadow", { mode: "community" }, { source: "community" });
@@ -1458,7 +1519,7 @@ describe("hot operations", () => {
       export async function execute() { return "v1"; }
     `);
 
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getAllTools().some(t => t.name === "upgradeable_v1")).toBe(true);
@@ -1489,7 +1550,7 @@ describe("hot operations", () => {
       export async function execute() { return "ok"; }
     `);
 
-    const pm = new PluginManager({ pluginsDirs: [builtinDir, communityDir], dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDirs: [builtinDir, communityDir], dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("removable")).not.toBeNull();
@@ -1505,7 +1566,7 @@ describe("hot operations", () => {
   it("removePlugin rejects builtin plugins", async () => {
     const dir = path.join(pluginsDir, "builtin-no-rm");
     fs.mkdirSync(dir, { recursive: true });
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     await expect(pm.removePlugin("builtin-no-rm")).rejects.toThrow("cannot be removed");
@@ -1528,7 +1589,7 @@ describe("hot operations", () => {
     const pm = new PluginManager({
       pluginsDirs: [builtinDir, communityDir], dataDir, bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -1537,7 +1598,7 @@ describe("hot operations", () => {
   });
 
   it("removePlugin throws for unknown pluginId", async () => {
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     await expect(pm.removePlugin("nonexistent")).rejects.toThrow('Plugin "nonexistent" not found');
   });
 
@@ -1559,7 +1620,7 @@ describe("hot operations", () => {
     const pm = new PluginManager({
       pluginsDirs: [builtinDir, communityDir], dataDir, bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("disableable").status).toBe("loaded");
@@ -1579,7 +1640,7 @@ describe("hot operations", () => {
       export const parameters = {};
       export async function execute() { return "ok"; }
     `);
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
     pm.scan();
     await pm.loadAll();
     await expect(pm.disablePlugin("builtin-no-disable")).rejects.toThrow("cannot be disabled");
@@ -1603,7 +1664,7 @@ describe("hot operations", () => {
     const pm = new PluginManager({
       pluginsDirs: [builtinDir, communityDir], dataDir, bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("enableable").status).toBe("disabled");
@@ -1636,7 +1697,7 @@ describe("hot operations", () => {
       pluginsDirs: [builtinDir, communityDir],
       dataDir, bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("fa-hot").status).toBe("restricted");
@@ -1670,7 +1731,7 @@ describe("hot operations", () => {
       pluginsDirs: [builtinDir, communityDir],
       dataDir, bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("fa-hot-off").status).toBe("loaded");
@@ -1708,7 +1769,7 @@ describe("hot operations", () => {
       pluginsDirs: [builtinDir, communityDir],
       dataDir, bus: await makeBus(),
       preferencesManager: mockPrefs,
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
     expect(pm.getPlugin("fa-disabled").status).toBe("disabled");
@@ -1719,7 +1780,7 @@ describe("hot operations", () => {
   });
 
   it("isValidPluginDir detects valid plugin directories", async () => {
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
 
     const validDir = path.join(pluginsDir, "valid-check");
     fs.mkdirSync(path.join(validDir, "tools"), { recursive: true });
@@ -1753,7 +1814,7 @@ describe("hot operations", () => {
       export async function execute() { return "ok"; }
     `);
 
-    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() });
+    const pm = new PluginManager({ pluginsDir, dataDir, bus: await makeBus() } as any);
 
     // Fire both installs concurrently
     const [e1, e2] = await Promise.all([
@@ -1789,7 +1850,7 @@ describe("route ctx injection", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -1814,7 +1875,7 @@ describe("route ctx injection", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 
@@ -1840,7 +1901,7 @@ describe("route ctx injection", () => {
       pluginsDirs: [builtinDir],
       dataDir,
       bus: await makeBus(),
-    });
+    } as any);
     pm.scan();
     await pm.loadAll();
 

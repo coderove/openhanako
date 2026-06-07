@@ -31,6 +31,7 @@ export const STANDARD_TOOL_NAMES = [
   "create_artifact",
   "notify",
   "stage_files",
+  "file",
   "subagent",
   "subagent_reply",
   "subagent_close",
@@ -52,15 +53,16 @@ export const OPTIONAL_TOOL_NAMES = [
   "automation",
   "beautify",
   "browser",
-  "cron",
   "dm",
   "install_skill",
+  "office",
   "update_settings",
   "workflow",
 ];
 
 export const PLUGIN_BACKED_OPTIONAL_TOOL_IDS = {
   beautify: "beautify",
+  office: "office",
 };
 
 const OPTIONAL_TOOL_NAMES_SET = new Set(OPTIONAL_TOOL_NAMES);

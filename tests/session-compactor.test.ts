@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -35,6 +34,7 @@ import {
 } from "../core/session-compactor.ts";
 import { buildSessionCacheSnapshot } from "../core/session-cache-snapshot.ts";
 import { createUsageLedger } from "../lib/llm/usage-ledger.ts";
+import { runSessionSnapshotSideTask } from "../lib/llm/session-snapshot-side-task-runner.ts";
 
 describe("session-compactor", () => {
   beforeEach(() => {
@@ -87,24 +87,24 @@ describe("session-compactor", () => {
       thinkingLevel: "high",
       streamFn,
       convertToLlm,
-    });
+    } as any);
 
     expect(convertToLlm).toHaveBeenCalledOnce();
     expect(streamFn).toHaveBeenCalledOnce();
-    const [model, context, options] = streamFn.mock.calls[0];
+    const [model, context, options] = (streamFn.mock.calls as any)[0];
     expect(model).toEqual({ id: "model", reasoning: true });
-    expect(context.systemPrompt).toBe("agent system prompt");
-    expect(context.tools).toEqual([
+    expect(context!.systemPrompt).toBe("agent system prompt");
+    expect(context!.tools).toEqual([
       { name: "read", description: "Read files", parameters: { type: "object" } },
     ]);
-    expect(context.messages).toHaveLength(2);
-    expect(context.messages[0].content[0].text).toBe("old history to summarize");
-    expect(JSON.stringify(context.messages)).not.toContain("KEPT_TAIL_SHOULD_NOT_ENTER_SUMMARY");
-    expect(context.messages[1].role).toBe("user");
-    expect(context.messages[1].content[0].text).toContain("<previous-summary>\nprevious checkpoint\n</previous-summary>");
-    expect(context.messages[1].content[0].text).toContain("The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.");
-    expect(context.messages[1].content[0].text).toContain("Additional focus: focus on decisions");
-    expect(context.messages[1].content[0].text).not.toContain("Hana cache-preserving compaction");
+    expect(context!.messages).toHaveLength(2);
+    expect(context!.messages[0].content[0].text).toBe("old history to summarize");
+    expect(JSON.stringify(context!.messages)).not.toContain("KEPT_TAIL_SHOULD_NOT_ENTER_SUMMARY");
+    expect(context!.messages[1].role).toBe("user");
+    expect(context!.messages[1].content[0].text).toContain("<previous-summary>\nprevious checkpoint\n</previous-summary>");
+    expect(context!.messages[1].content[0].text).toContain("The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.");
+    expect(context!.messages[1].content[0].text).toContain("Additional focus: focus on decisions");
+    expect(context!.messages[1].content[0].text).not.toContain("Hana cache-preserving compaction");
     expect(options).toEqual(expect.objectContaining({
       maxTokens: 800,
       reasoning: "high",
@@ -178,7 +178,7 @@ describe("session-compactor", () => {
           sessionPath: "/sessions/current.jsonl",
         },
       },
-    });
+    } as any);
 
     const [entry] = ledger.list({ subsystem: "compaction" }).entries;
     expect(entry).toMatchObject({
@@ -239,10 +239,10 @@ describe("session-compactor", () => {
       thinkingLevel: "off",
       streamFn,
       convertToLlm: vi.fn(async (input) => input),
-    });
+    } as any);
 
     expect(result.summary).toBe("cache summary");
-    expect(streamFn.mock.calls[0][2]).toMatchObject({
+    expect((streamFn.mock.calls as any)[0][2]).toMatchObject({
       reasoning: "medium",
       toolChoice: "none",
     });
@@ -494,7 +494,7 @@ describe("session-compactor", () => {
       extensionRunner: { hasHandlers: vi.fn(() => false) },
     };
 
-    await expect(compactSessionWithCachePreservation(session)).rejects.toThrow(
+    await expect((compactSessionWithCachePreservation as any)(session)).rejects.toThrow(
       "Cache-preserving compaction extension is not installed",
     );
     expect(session.compact).not.toHaveBeenCalled();
@@ -511,7 +511,7 @@ describe("session-compactor", () => {
       },
     };
 
-    await expect(compactSessionWithCachePreservation(session)).rejects.toThrow(
+    await expect((compactSessionWithCachePreservation as any)(session)).rejects.toThrow(
       "This extension ctx is stale after session replacement or reload",
     );
     expect(session.extensionRunner.hasHandlers).not.toHaveBeenCalled();
@@ -526,5 +526,102 @@ describe("session-compactor", () => {
 
     await expect(compactSessionWithCachePreservation(session, "extra focus")).resolves.toBe("ok");
     expect(session.compact).toHaveBeenCalledWith("extra focus");
+  });
+});
+
+describe("session snapshot side-task runner", () => {
+  function sideTaskSnapshot() {
+    return buildSessionCacheSnapshot({
+      sessionPath: "/sessions/a.jsonl",
+      reason: "memory.reflection",
+      model: { id: "gpt-5.1", provider: "openai", api: "openai-responses" },
+      cacheKeyParams: { thinkingLevel: "medium" },
+      systemPrompt: "stable system",
+      tools: [{ name: "read", description: "Read files", parameters: { type: "object" } }],
+      messages: [{ role: "user", content: "hello" }],
+    });
+  }
+
+  it("appends the suffix after the exact parent prefix and keeps tools", async () => {
+    const streamFn = vi.fn(async () => ({
+      result: vi.fn(async () => ({
+        stopReason: "stop",
+        content: [{ type: "text", text: "side result" }],
+        usage: { input_tokens: 100, cache_read_input_tokens: 90, output_tokens: 10 },
+      })),
+    }));
+
+    const result = await runSessionSnapshotSideTask({
+      snapshot: sideTaskSnapshot(),
+      model: { id: "gpt-5.1", provider: "openai", api: "openai-responses" },
+      cacheKeyParams: { thinkingLevel: "medium" },
+      suffixMessage: { role: "user", content: [{ type: "text", text: "internal task" }] },
+      streamFn,
+      options: { reasoning: "medium", toolChoice: "none" },
+      cacheGroup: "memory.reflection",
+      templateVersion: "v1",
+    });
+
+    expect(result.text).toBe("side result");
+    expect(result.metadata).toMatchObject({
+      cacheStrategy: "session_snapshot",
+      strict: true,
+      cacheGroup: "memory.reflection",
+    });
+    const [, context, options] = streamFn.mock.calls[0] as any;
+    expect(context.systemPrompt).toBe("stable system");
+    expect(context.tools).toEqual([{ name: "read", description: "Read files", parameters: { type: "object" } }]);
+    expect(context.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "user", content: [{ type: "text", text: "internal task" }] },
+    ]);
+    expect(options).toMatchObject({ reasoning: "medium", toolChoice: "none" });
+  });
+
+  it("canonicalizes legacy auto in side-task cache params and request options", async () => {
+    const streamFn = vi.fn(async () => ({
+      result: vi.fn(async () => ({
+        stopReason: "stop",
+        content: [{ type: "text", text: "side result" }],
+      })),
+    }));
+    const snap = buildSessionCacheSnapshot({
+      sessionPath: "/sessions/a.jsonl",
+      reason: "memory.reflection",
+      model: { id: "gpt-5.1", provider: "openai", api: "openai-responses" },
+      cacheKeyParams: { thinkingLevel: "auto" },
+      systemPrompt: "stable system",
+      tools: [],
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    await runSessionSnapshotSideTask({
+      snapshot: snap,
+      model: { id: "gpt-5.1", provider: "openai", api: "openai-responses" },
+      cacheKeyParams: { thinkingLevel: "auto" },
+      suffixMessage: { role: "user", content: "internal task" },
+      streamFn,
+      options: { reasoning: "auto", toolChoice: "none" },
+      cacheGroup: "memory.reflection",
+      templateVersion: "v1",
+    });
+
+    const [, , options] = streamFn.mock.calls[0] as any;
+    expect(options).toEqual({ reasoning: "medium", toolChoice: "none" });
+  });
+
+  it("throws before provider call when strict request contract is broken", async () => {
+    const streamFn = vi.fn();
+    await expect(runSessionSnapshotSideTask({
+      snapshot: sideTaskSnapshot(),
+      model: { id: "gpt-5.1", provider: "openai", api: "openai-responses" },
+      cacheKeyParams: { thinkingLevel: "off" },
+      suffixMessage: { role: "user", content: "internal task" },
+      streamFn,
+      options: { reasoning: "off", toolChoice: "none" },
+      cacheGroup: "memory.reflection",
+      templateVersion: "v1",
+    })).rejects.toThrow("Session snapshot request is not strict");
+    expect(streamFn).not.toHaveBeenCalled();
   });
 });

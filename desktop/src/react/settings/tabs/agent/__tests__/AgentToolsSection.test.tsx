@@ -45,7 +45,7 @@ describe("AgentToolsSection", () => {
   it("renders registered optional toggles while ignoring global tools", () => {
     const { container } = render(
       <AgentToolsSection
-        availableTools={["automation", "beautify", "browser", "computer", "cron", "dm", "install_skill", "update_settings", "workflow", "read"]}
+        availableTools={["automation", "beautify", "browser", "computer", "cron", "dm", "install_skill", "office", "update_settings", "workflow", "read"]}
         disabled={[]}
       />
     );
@@ -54,9 +54,10 @@ describe("AgentToolsSection", () => {
     expect(getRow(container, "beautify")).toBeTruthy();
     expect(getRow(container, "browser")).toBeTruthy();
     expect(getRow(container, "computer")).toBeNull();
-    expect(getRow(container, "cron")).toBeTruthy();
+    expect(getRow(container, "cron")).toBeNull();
     expect(getRow(container, "dm")).toBeTruthy();
     expect(getRow(container, "install_skill")).toBeTruthy();
+    expect(getRow(container, "office")).toBeTruthy();
     expect(getRow(container, "update_settings")).toBeTruthy();
     expect(getRow(container, "workflow")).toBeTruthy();
     expect(getRow(container, "computer")).toBeNull();
@@ -74,13 +75,14 @@ describe("AgentToolsSection", () => {
     expect(getRow(container, "beautify")).toBeTruthy();
     expect(getRow(container, "browser")).toBeTruthy();
     expect(getRow(container, "computer")).toBeNull();
+    expect(getRow(container, "office")).toBeTruthy();
     expect(getRow(container, "workflow")).toBeTruthy();
   });
 
   it("hides dm row when dm is not in availableTools (single agent env)", () => {
     const { container } = render(
       <AgentToolsSection
-        availableTools={["beautify", "browser", "computer", "cron", "install_skill", "update_settings", "read"]}
+        availableTools={["beautify", "browser", "computer", "cron", "install_skill", "office", "update_settings", "read"]}
         disabled={[]}
       />
     );
@@ -89,6 +91,7 @@ describe("AgentToolsSection", () => {
     expect(getRow(container, "beautify")).toBeTruthy();
     expect(getRow(container, "browser")).toBeTruthy();
     expect(getRow(container, "computer")).toBeNull();
+    expect(getRow(container, "office")).toBeTruthy();
   });
 
   it("toggle shows ON when tool is not in disabled list", () => {
@@ -107,7 +110,7 @@ describe("AgentToolsSection", () => {
 
   it("clicking an ON toggle adds the tool to disabled list via autoSaveConfig", () => {
     const { container } = render(
-      <AgentToolsSection availableTools={["browser", "cron"]} disabled={[]} />
+      <AgentToolsSection availableTools={["browser", "automation"]} disabled={[]} />
     );
     clickToggle(getRow(container, "browser"));
     expect(autoSaveConfig).toHaveBeenCalledWith({
@@ -118,13 +121,13 @@ describe("AgentToolsSection", () => {
   it("clicking an OFF toggle removes the tool from disabled list", () => {
     const { container } = render(
       <AgentToolsSection
-        availableTools={["browser", "cron"]}
-        disabled={["browser", "cron"]}
+        availableTools={["browser", "automation"]}
+        disabled={["browser", "automation"]}
       />
     );
     clickToggle(getRow(container, "browser"));
     expect(autoSaveConfig).toHaveBeenCalledWith({
-      tools: { disabled: ["cron"] },
+      tools: { disabled: ["automation"] },
     });
   });
 
@@ -137,21 +140,21 @@ describe("AgentToolsSection", () => {
   });
 
   it("two rapid clicks on different toggles both reach autoSaveConfig (P2 race regression)", () => {
-    // Scenario: user disables browser, then disables cron before the first
+    // Scenario: user disables browser, then disables automation before the first
     // PUT+GET round-trip refreshes the `disabled` prop. Without the useRef
     // fix the second click would build newDisabled from the stale prop
-    // (still []), producing ["cron"] and silently losing the browser change.
+    // (still []), producing ["automation"] and silently losing the browser change.
     const { container } = render(
-      <AgentToolsSection availableTools={["browser", "cron"]} disabled={[]} />
+      <AgentToolsSection availableTools={["browser", "automation"]} disabled={[]} />
     );
     clickToggle(getRow(container, "browser"));
-    clickToggle(getRow(container, "cron"));
+    clickToggle(getRow(container, "automation"));
 
     expect(autoSaveConfig).toHaveBeenNthCalledWith(1, {
       tools: { disabled: ["browser"] },
     });
     expect(autoSaveConfig).toHaveBeenNthCalledWith(2, {
-      tools: { disabled: ["browser", "cron"] },
+      tools: { disabled: ["browser", "automation"] },
     });
   });
 
