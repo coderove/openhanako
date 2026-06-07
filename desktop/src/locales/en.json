@@ -2226,7 +2226,8 @@
       "title": "Activity"
     },
     "todo": {
-      "title": "To-dos"
+      "title": "To-dos",
+      "waitForOutput": "Wait for output to finish"
     },
     "subagent": {
       "title": "Sub-agents"

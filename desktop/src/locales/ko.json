@@ -2025,7 +2025,8 @@
       "title": "백그라운드 활동"
     },
     "todo": {
-      "title": "할 일"
+      "title": "할 일",
+      "waitForOutput": "Wait for output to finish"
     },
     "subagent": {
       "title": "서브 에이전트"

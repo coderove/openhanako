@@ -207,6 +207,10 @@ function installStoreMethods() {
     const bySession = mockState.todosBySession as Record<string, unknown>;
     bySession[path] = todos;
   });
+  s.bumpTodosLiveVersion = vi.fn((path: string) => {
+    const versions = mockState.todosLiveVersionBySession as Record<string, number>;
+    versions[path] = (versions[path] ?? 0) + 1;
+  });
   s.setInlineError = vi.fn((path: string, text: string) => {
     const inlineErrors = mockState.inlineErrors as Record<string, string | null>;
     inlineErrors[path] = text;
@@ -238,7 +242,7 @@ import { hanaFetch } from '../../hooks/use-hana-fetch';
 import { clearChat } from '../../stores/agent-actions';
 import { loadDeskFiles } from '../../stores/desk-actions';
 import { bumpMessageLiveVersion, clearMessageLiveVersion } from '../../stores/message-live-version';
-import { archiveSession, continueDeletedAgentSession, createNewSession, ensureSession, loadMessages, loadSessions, pinSession, switchSession } from '../../stores/session-actions';
+import { archiveSession, completeSessionTodos, continueDeletedAgentSession, createNewSession, ensureSession, loadMessages, loadSessions, pinSession, switchSession } from '../../stores/session-actions';
 import { snapshotStreamBuffer } from '../../stores/stream-invalidator';
 
 const mockFetch = vi.mocked(hanaFetch);
@@ -337,6 +341,34 @@ function jsonResponse(body: unknown, ok = true): Response {
     expect(mockState.currentAgentId).toBeNull();
     expect(deskActionMocks.activateWorkspaceDesk).toHaveBeenCalledWith('/tmp/work', { mountId: null, label: null });
     expect((mockState.chatSessions as Record<string, any>)[deletedPath].items).toHaveLength(1);
+  });
+
+  it('completes current session todos through the explicit cleanup route', async () => {
+    const sessionPath = '/session/todo-cleanup.jsonl';
+    mockFetch.mockResolvedValue(jsonResponse({ ok: true, todos: [] }));
+
+    const ok = await completeSessionTodos(sessionPath);
+
+    expect(ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/todos/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: sessionPath }),
+    });
+    expect(mockState.setSessionTodosForPath).toHaveBeenCalledWith(sessionPath, []);
+    expect(mockState.bumpTodosLiveVersion).toHaveBeenCalledWith(sessionPath);
+  });
+
+  it('does not complete session todos while that session is streaming', async () => {
+    const sessionPath = '/session/streaming.jsonl';
+    Object.assign(mockState, {
+      streamingSessions: [sessionPath],
+    });
+
+    const ok = await completeSessionTodos(sessionPath);
+
+    expect(ok).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('clears unread output marker when switching into a normal session', async () => {

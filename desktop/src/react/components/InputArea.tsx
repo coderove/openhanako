@@ -60,11 +60,9 @@ import {
 import { attachFilesFromPaths } from '../MainContent';
 import { hanaFetch } from '../hooks/use-hana-fetch';
 import styles from './input/InputArea.module.css';
-import type { TodoItem } from '../types';
 import type { ChatListItem, SessionConfirmationBlock } from '../stores/chat-types';
 import type { AudioWaveform } from '../stores/chat-types';
 
-const EMPTY_TODOS: TodoItem[] = [];
 const EMPTY_FILE_REFS: readonly import('../types/file-ref').FileRef[] = Object.freeze([]);
 
 function chatVideoMimeTypeForName(name: string, fallback?: string): string {
@@ -291,7 +289,6 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
   const screenshotBusy = useStore(s => s.screenshotTaskCount > 0);
   const screenshotProgress = useStore(s => s.screenshotProgress);
   const inlineError = useStore(s => s.inlineErrors[s.currentSessionPath || ''] ?? null);
-  const sessionTodos = useStore(s => (s.currentSessionPath && s.todosBySession[s.currentSessionPath]) || EMPTY_TODOS);
   const sessionFiles = useStore(s => (s.currentSessionPath ? selectSessionFiles(s, s.currentSessionPath) : EMPTY_FILE_REFS));
   const attachedFiles = useStore(s => s.attachedFiles);
   const docContextAttached = useStore(s => s.docContextAttached);
@@ -356,7 +353,6 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
   const [fileMentionRange, setFileMentionRange] = useState<FileMentionRange | null>(null);
   const [fileMentionQuery, setFileMentionQuery] = useState('');
   const [fileMentionBusy] = useState(false);
-  const [completingTodos, setCompletingTodos] = useState(false);
   const [continuingDeletedAgentSession, setContinuingDeletedAgentSession] = useState(false);
   const [deletedAgentContinueError, setDeletedAgentContinueError] = useState<string | null>(null);
   const [audioRecorderOpen, setAudioRecorderOpen] = useState(false);
@@ -1687,26 +1683,6 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
     void revealDeskDirectory(slashResult.deskDir);
   }, [slashResult?.deskDir]);
 
-  const handleCompleteTodos = useCallback(async () => {
-    const path = currentSessionPath;
-    if (!path || completingTodos || sessionTodos.length === 0) return;
-    setCompletingTodos(true);
-    try {
-      await hanaFetch('/api/sessions/todos/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      });
-      useStore.getState().setSessionTodosForPath(path, []);
-      useStore.getState().bumpTodosLiveVersion(path);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(message, 'error', 6000);
-    } finally {
-      setCompletingTodos(false);
-    }
-  }, [addToast, completingTodos, currentSessionPath, sessionTodos.length]);
-
   const handleContinueDeletedAgentSession = useCallback(async () => {
     const path = currentSessionPath;
     if (!path || continuingDeletedAgentSession) return;
@@ -1732,9 +1708,6 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
         attachedFiles={attachedFiles}
         removeAttachedFile={removeAttachedFile}
         hasQuotedSelection={quotedSelections.length > 0}
-        sessionTodos={sessionTodos}
-        onCompleteTodos={handleCompleteTodos}
-        completingTodos={completingTodos}
       />
       <InputStatusBars
         slashBusy={slashBusy}

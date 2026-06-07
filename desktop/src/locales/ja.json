@@ -2025,7 +2025,8 @@
       "title": "バックグラウンド"
     },
     "todo": {
-      "title": "ToDo"
+      "title": "ToDo",
+      "waitForOutput": "Wait for output to finish"
     },
     "subagent": {
       "title": "サブエージェント"

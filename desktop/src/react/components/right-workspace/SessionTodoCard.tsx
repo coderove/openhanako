@@ -1,12 +1,15 @@
 /**
  * SessionTodoCard — 右侧「待办」卡（最高优先级，置顶任务区）
  *
- * 复用 TodoDisplay 的三态逻辑（○ pending / ⟳ in_progress / ✓ completed），
- * 展示当前对话的 sessionTodos。无 todo / 无对话时返回 null。
+ * 展示当前对话的 keyed todos。无 todo / 无对话时返回 null。
  */
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../stores';
+import { completeSessionTodos } from '../../stores/session-actions';
 import type { TodoItem, TodoStatus } from '../../types';
 import styles from './SessionTodoCard.module.css';
+
+const EMPTY_TODOS: TodoItem[] = [];
 
 const STATUS_ICON: Record<TodoStatus, string> = {
   pending: '○',
@@ -19,14 +22,46 @@ function displayText(todo: TodoItem): string {
   return todo.content || todo.activeForm || '';
 }
 
+function CheckIcon() {
+  return (
+    <svg className={styles.actionIcon} width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function SessionTodoCard() {
+  const mountedRef = useRef(true);
+  const [completing, setCompleting] = useState(false);
   const sessionPath = useStore((s) => s.currentSessionPath);
-  const todos = useStore((s) => s.sessionTodos);
+  const todos = useStore((s) => {
+    const path = s.currentSessionPath;
+    return path ? (s.todosBySession[path] ?? EMPTY_TODOS) : EMPTY_TODOS;
+  });
+  const streaming = useStore((s) => {
+    const path = s.currentSessionPath;
+    return !!path && s.streamingSessions.includes(path);
+  });
   const t = window.t ?? ((k: string) => k);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   if (!sessionPath || !todos.length) return null;
 
   const done = todos.filter((td) => td.status === 'completed').length;
+  const actionDisabled = completing || streaming;
+
+  async function handleCompleteAll() {
+    if (actionDisabled || !sessionPath) return;
+    setCompleting(true);
+    try {
+      await completeSessionTodos(sessionPath);
+    } finally {
+      if (mountedRef.current) setCompleting(false);
+    }
+  }
 
   return (
     <section className={`jian-card ${styles.card}`} aria-label={t('rightWorkspace.todo.title')}>
@@ -42,6 +77,17 @@ export function SessionTodoCard() {
           </div>
         ))}
       </div>
+      <button
+        className={styles.completeButton}
+        type="button"
+        onClick={handleCompleteAll}
+        disabled={actionDisabled}
+        aria-label={t('common.markAllComplete')}
+        title={streaming ? t('rightWorkspace.todo.waitForOutput') : t('common.markAllComplete')}
+      >
+        <CheckIcon />
+        <span>{t('common.markAllComplete')}</span>
+      </button>
     </section>
   );
 }

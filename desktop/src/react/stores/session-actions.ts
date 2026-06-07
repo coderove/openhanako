@@ -238,6 +238,27 @@ export async function loadMessages(forPath?: string): Promise<void> {
   } catch (err) { console.error('[loadMessages] error:', err); }
 }
 
+export async function completeSessionTodos(sessionPath: string): Promise<boolean> {
+  if (!sessionPath) return false;
+  const state = useStore.getState();
+  if (state.streamingSessions.includes(sessionPath)) return false;
+
+  try {
+    await hanaFetch('/api/sessions/todos/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: sessionPath }),
+    });
+    useStore.getState().setSessionTodosForPath(sessionPath, []);
+    useStore.getState().bumpTodosLiveVersion(sessionPath);
+    return true;
+  } catch (err) {
+    const message = errorMessage(err);
+    useStore.getState().addToast(message, 'error', 6000);
+    return false;
+  }
+}
+
 function buildInflightAssistantMessage(snap: StreamBufferSnapshot): ChatMessage {
   const blocks: ContentBlock[] = [];
   if (snap.thinking || snap.inThinking) {
