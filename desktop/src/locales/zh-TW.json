@@ -448,6 +448,9 @@
     "copy": "複製",
     "copied": "已複製 ✓"
   },
+  "codeBlock": {
+    "wordWrap": "自動換行"
+  },
   "cron": {
     "typeAt": "單次",
     "typeEvery": "間隔",

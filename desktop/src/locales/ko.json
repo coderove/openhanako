@@ -382,6 +382,9 @@
     "copy": "복사",
     "copied": "복사됨 ✓"
   },
+  "codeBlock": {
+    "wordWrap": "자동 줄 바꿈"
+  },
   "cron": {
     "typeAt": "1회",
     "typeEvery": "반복",
