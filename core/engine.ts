@@ -631,6 +631,7 @@ export class HanaEngine {
   }
   getSessionFile(fileId, options) { return this._sessionFiles.get(fileId, options); }
   getSessionFileByPath(filePath, options) { return this._sessionFiles.getByFilePath(filePath, options); }
+  getSessionFileBySourceKey(sourceKey, options) { return this._sessionFiles.getBySourceKey(sourceKey, options); }
   listSessionFiles(sessionPath) { return this._sessionFiles.list(sessionPath); }
   updateSessionFileTranscription(fileId, transcription, options) { return this._sessionFiles.updateTranscription(fileId, transcription, options); }
   beginCurrentTurnNativeMedia(sessionPath, opts) { return this._currentTurnNativeMedia.begin(sessionPath, opts); }
@@ -1144,6 +1145,7 @@ export class HanaEngine {
   setPluginDevToolsEnabled(value) { return this._prefs.setPluginDevToolsEnabled(value); }
   getPluginInstallRecord(pluginId) { return this._pluginInstallRecords.get(pluginId); }
   recordPluginInstall(record) { return this._pluginInstallRecords.recordInstall(record); }
+  removePluginInstallRecord(pluginId) { return this._pluginInstallRecords.remove(pluginId); }
   getTimezone() { return this._prefs.getTimezone(); }
   setTimezone(tz) { this._prefs.setTimezone(tz); }
   getUpdateChannel() { return this._prefs.getUpdateChannel(); }

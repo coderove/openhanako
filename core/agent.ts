@@ -20,7 +20,6 @@ import { createAutomationTool } from "../lib/tools/automation-tool.ts";
 import { createWebFetchTool } from "../lib/tools/web-fetch.ts";
 import { createStageFilesTool } from "../lib/tools/output-file-tool.ts";
 import { createFileTool } from "../lib/tools/file-tool.ts";
-import { createArtifactTool } from "../lib/tools/artifact-tool.ts";
 import { createChannelTool } from "../lib/tools/channel-tool.ts";
 import { createDmTool } from "../lib/tools/dm-tool.ts";
 import { createBrowserTool } from "../lib/tools/browser-tool.ts";
@@ -90,7 +89,6 @@ type BuildSystemPromptOptions = {
 };
 
 export class Agent {
-  declare _artifactTool: any;
   declare _automationTool: any;
   declare _browserTool: any;
   declare _cb: any;
@@ -224,9 +222,6 @@ export class Agent {
     this._automationTool = null;
     this._stageFilesTool = null;
     this._fileTool = null;
-    // Legacy compatibility only. Fresh sessions should write files and stage
-    // them via stage_files; restored old sessions may still need this schema.
-    this._artifactTool = null;
     this._channelTool = null;
     this._browserTool = null;
     this._computerUseTool = null;
@@ -466,11 +461,6 @@ export class Agent {
       getSessionPath: () => this._cb?.getCurrentSessionPath?.(),
       resolveSessionFile: (fileId, options = {}) => this._cb?.getEngine?.()?.getSessionFile?.(fileId, options) || null,
       registerSessionFile: (entry) => this._cb?.registerSessionFile?.(entry),
-    });
-    this._artifactTool = createArtifactTool({
-      getHanakoHome: () => this._cb?.getEngine?.()?.hanakoHome,
-      registerSessionFile: (entry) => this._cb?.registerSessionFile?.(entry),
-      getSessionPath: () => this._cb?.getCurrentSessionPath?.(),
     });
     this._browserTool = createBrowserTool(() => this._cb?.getCurrentSessionPath?.(), {
       getSessionModel: (sessionPath) => {
@@ -852,9 +842,6 @@ export class Agent {
     const computerUseTools = this._isComputerUseCandidateForThisAgent()
       ? [this._getComputerUseTool()]
       : [];
-    const legacyArtifactTools = options.includeLegacyArtifactTool === true
-      ? [this._artifactTool]
-      : [];
     return [
       ...memTools,
       ...experienceTools,
@@ -864,7 +851,6 @@ export class Agent {
       this._automationTool,
       this._stageFilesTool,
       this._fileTool,
-      ...legacyArtifactTools,
       this._channelTool,
       this._dmTool,
       this._browserTool,
@@ -1413,12 +1399,28 @@ export class Agent {
     // 以下内容会在不同 session 之间变化（用户档案编辑、cwd 切换、记忆更新、时间戳推进），
     // 统一放在 prompt 末尾以保护前面静态前缀的 cache 命中率。
 
-    // 用户档案（user.md，用户偶尔手动编辑）
+    // 用户档案（user.md）
+    const configuredUserName = typeof this._config?.user?.name === "string"
+      ? this._config.user.name.trim()
+      : "";
+    const userProfileLines = [
+      isZh
+        ? "以下是用户的自我描述。"
+        : "The following is the user's self-description.",
+    ];
+    if (configuredUserName) {
+      userProfileLines.push(
+        isZh
+          ? `用户的名字叫：${configuredUserName}`
+          : `The user's name is: ${configuredUserName}`
+      );
+    }
+    if (userMd) {
+      userProfileLines.push("", userMd);
+    }
     parts.push(...section(
       isZh ? "# 用户档案" : "# User Profile",
-      isZh
-        ? "以下是用户的自我描述，由用户手动维护。\n\n" + userMd
-        : "The following is the user's self-description, manually maintained by the user.\n\n" + userMd
+      userProfileLines.join("\n")
     ));
 
     // ishiki（identity + yuan + ishiki 模板，含 {{userName}} 等替换）
