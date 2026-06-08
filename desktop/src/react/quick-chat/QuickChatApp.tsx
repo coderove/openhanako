@@ -28,6 +28,7 @@ import {
   shouldAdoptRuntimeAgentForQuickChat,
   type QuickChatRuntimeAgent,
 } from './quick-chat-runtime';
+import { useQuickChatAutoScroll } from './use-quick-chat-auto-scroll';
 import styles from './QuickChatApp.module.css';
 
 interface AgentOption extends QuickChatRuntimeAgent {
@@ -629,11 +630,13 @@ export function QuickChatApp() {
     window.hana?.quickChatResize?.({ mode, height });
   }, [attachments.length, displayError, draft, expanded, sessionItems, isStreaming]);
 
-  useEffect(() => {
-    const scroller = transcriptScrollRef.current;
-    if (!scroller) return;
-    scroller.scrollTop = scroller.scrollHeight;
-  }, [sessionItems, isStreaming, draft]);
+  useQuickChatAutoScroll({
+    expanded,
+    isStreaming,
+    scrollRef: transcriptScrollRef,
+    sessionItems,
+    sessionPath,
+  });
 
   return (
     <div

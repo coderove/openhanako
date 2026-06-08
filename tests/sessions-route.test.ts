@@ -1206,6 +1206,7 @@ describe("sessions route", () => {
           result: "子助手完整回复",
           meta: {
             type: "subagent",
+            interlude: true,
             executorAgentNameSnapshot: "明",
             label: "大纲评估",
             summary: "请阅读整份长任务说明并输出完整评估",
@@ -1836,15 +1837,6 @@ describe("sessions route", () => {
 
     expect(res.status).toBe(200);
     expect(data.blocks).toEqual([
-      expect.objectContaining({
-        type: "interlude",
-        afterIndex: 0,
-        taskId: "task-img",
-        sourceKind: "tool",
-        sourceLabel: "图片生成",
-        text: "Hana 收到了来自 图片生成 工具的结果",
-        detailMarkdown: expect.stringContaining("generated.png"),
-      }),
       {
         type: "file",
         afterIndex: 0,
@@ -1968,15 +1960,6 @@ describe("sessions route", () => {
 
     expect(res.status).toBe(200);
     expect(data.blocks).toEqual([
-      expect.objectContaining({
-        type: "interlude",
-        afterIndex: 0,
-        taskId: "task-img",
-        sourceKind: "tool",
-        sourceLabel: "图片生成",
-        text: "Hana 收到了来自 图片生成 工具的结果",
-        detailMarkdown: "生成文件：\n- generated.png (image)",
-      }),
       {
         type: "file",
         afterIndex: 0,

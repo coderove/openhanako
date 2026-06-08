@@ -382,6 +382,9 @@
     "copy": "コピー",
     "copied": "コピーしました ✓"
   },
+  "codeBlock": {
+    "wordWrap": "折り返し"
+  },
   "cron": {
     "typeAt": "一回のみ",
     "typeEvery": "一定間隔",

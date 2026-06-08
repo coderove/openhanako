@@ -799,6 +799,7 @@ export function createSessionsRoute(engine, hub = null) {
           reason: parsed.reason || metadataTask?.reason || null,
           meta,
         };
+        if (!meta.interlude) return;
         const block = buildDeferredResultInterludeBlock(event, { receiverName });
         if (!block) return;
         blocks.push({ ...block, afterIndex });

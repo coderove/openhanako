@@ -348,6 +348,7 @@ describe("chat route model switch guard", () => {
       result: "回来了。",
       meta: {
         type: "subagent",
+        interlude: true,
         executorAgentNameSnapshot: "Hanako",
         label: "凌晨诗行",
         summary: "写一首关于凌晨五点三十九分的三行短诗。要求：不要使用常见意象。",
@@ -691,7 +692,7 @@ describe("chat route model switch guard", () => {
         taskId,
         status: "success",
         result: `result ${taskId}`,
-        meta: { type: "subagent", executorAgentNameSnapshot: "明", label: "回执" },
+        meta: { type: "subagent", interlude: true, executorAgentNameSnapshot: "明", label: "回执" },
       }, "/tmp/standalone-deferred.jsonl");
     }
 

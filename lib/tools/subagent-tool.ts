@@ -301,6 +301,7 @@ export function createSubagentTool(deps) {
         applyRequestedAgentMetadata(
           mergeExecutorMetadata({
             type: "subagent",
+            interlude: true,
             threadId,
             threadKind,
             label,
@@ -605,6 +606,7 @@ export function createSubagentReplyTool(deps) {
 
       store.defer(taskId, parentSessionPath, mergeExecutorMetadata({
         type: "subagent",
+        interlude: true,
         threadId,
         threadKind,
         label: initialThread.label || null,

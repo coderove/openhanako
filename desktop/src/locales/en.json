@@ -418,6 +418,9 @@
     "copy": "Copy",
     "copied": "Copied ✓"
   },
+  "codeBlock": {
+    "wordWrap": "Word Wrap"
+  },
   "cron": {
     "typeAt": "Once",
     "typeEvery": "Interval",

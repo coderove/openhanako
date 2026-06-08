@@ -123,7 +123,7 @@ export function createWorkflowTool(deps) {
       const hub = deps.getActivityHub?.();
       const startedAt = Date.now();
 
-      store.defer(taskId, parentSessionPath, { type: "workflow", summary });
+      store.defer(taskId, parentSessionPath, { type: "workflow", interlude: true, summary });
       runStore?.register?.(taskId, { parentSessionPath, summary });
       hub?.upsert({ id: taskId, kind: "workflow", status: "running", sessionPath: parentSessionPath, agentId, summary, startedAt });
 
