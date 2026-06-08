@@ -19,7 +19,7 @@ export function createArtifactTool({ getHanakoHome, registerSessionFile, getSess
   return {
     name: "create_artifact",
     label: "Create Preview",
-    description: "Call this tool when you need to show the user an HTML page, code snippet, or long-form Markdown content.\nContent is rendered in a standalone preview panel where the user can view results in real time.\nGood for: runnable HTML/CSS/JS pages, interactive visualizations, SVG charts, complete code files, long formatted documents.\nNot for: short text replies, conversational answers, one-line code snippets (just show those inline).",
+    description: "Show HTML pages, code snippets, or Markdown in a standalone preview panel with real-time rendering.",
     parameters: Type.Object({
       type: StringEnum(
         ["html", "code", "markdown"],
