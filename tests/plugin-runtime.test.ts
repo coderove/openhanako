@@ -15,7 +15,9 @@ import {
   createSession,
   getAgentProfile,
   getSession,
+  generateMedia,
   generateImage,
+  generateVideo,
   listUsageEntries,
   listAgents,
   listMediaProviders,
@@ -26,6 +28,7 @@ import {
   sampleText,
   scheduleTask,
   sendSessionMessage,
+  transcribeAudio,
   subscribeSessionEvents,
   sessionFileToMediaItem,
   subscribeUsageEvents,
@@ -223,6 +226,9 @@ describe('plugin runtime SDK', () => {
       if (type === 'provider:media-providers') return { providers: {} };
       if (type === 'provider:resolve-media-model') return { providerId: 'openai', modelId: 'gpt-image-1', protocolId: 'openai-images' };
       if (type === 'media:generate-image') return { ok: true, batchId: 'batch-1' };
+      if (type === 'media:generate-video') return { ok: true, batchId: 'batch-video' };
+      if (type === 'media:generate') return { ok: true, batchId: 'batch-media' };
+      if (type === 'media:transcribe-audio') return { status: 'ready', text: 'hello' };
       throw new Error(type);
     });
     const subscribe = vi.fn(() => unsubscribe);
@@ -245,6 +251,9 @@ describe('plugin runtime SDK', () => {
     await listMediaProviders(ctx as any, { capability: 'image_generation' });
     await resolveMediaModel(ctx as any, { providerId: 'openai', modelId: 'gpt-image-1' });
     await generateImage(ctx as any, { sessionPath: '/s/new.jsonl', prompt: 'a quiet room' });
+    await generateVideo(ctx as any, { sessionPath: '/s/new.jsonl', prompt: 'a quiet room in motion' });
+    await generateMedia(ctx as any, { kind: 'image', sessionPath: '/s/new.jsonl', prompt: 'a quiet room' });
+    const transcription = await transcribeAudio(ctx as any, { sessionPath: '/s/new.jsonl', fileId: 'file-audio' });
 
     expect(request).toHaveBeenCalledWith('session:create', {
       agentId: 'agent-a',
@@ -270,6 +279,26 @@ describe('plugin runtime SDK', () => {
       prompt: 'a quiet room',
       pluginId: 'tavern',
     }, undefined);
+    expect(request).toHaveBeenCalledWith('media:generate-video', {
+      sessionPath: '/s/new.jsonl',
+      prompt: 'a quiet room in motion',
+      pluginId: 'tavern',
+    }, undefined);
+    expect(request).toHaveBeenCalledWith('media:generate', {
+      kind: 'image',
+      sessionPath: '/s/new.jsonl',
+      prompt: 'a quiet room',
+      pluginId: 'tavern',
+    }, undefined);
+    expect(request).toHaveBeenCalledWith('media:transcribe-audio', {
+      sessionPath: '/s/new.jsonl',
+      fileId: 'file-audio',
+      pluginId: 'tavern',
+    }, undefined);
+    expect(transcription).toEqual({
+      ok: true,
+      transcription: { status: 'ready', text: 'hello' },
+    });
   });
 
   it('wraps task bus calls with typed helper payloads', async () => {

@@ -46,6 +46,10 @@ export function bridgeDeliveryTarget(ctx) {
 }
 
 export function buildImageParams(input) {
+  const referenceImages = Array.isArray(input.referenceImages)
+    ? input.referenceImages.filter((item) => typeof item === "string" && item.trim())
+    : [];
+  const image = referenceImages.length > 0 ? referenceImages : input.image;
   return {
     type: "image",
     prompt: input.prompt,
@@ -55,8 +59,36 @@ export function buildImageParams(input) {
     ...(input.resolution && { resolution: input.resolution }),
     ...(input.quality && { quality: input.quality }),
     ...(input.model && { model: input.model }),
-    ...(input.image && { image: input.image }),
+    ...(image && { image }),
   };
+}
+
+function countReferenceImages(image) {
+  if (!image) return 0;
+  const images = Array.isArray(image) ? image : [image];
+  return images.filter((item) => typeof item === "string" && item.trim()).length;
+}
+
+function adapterMaxReferenceImages(adapter) {
+  const raw = adapter?.maxReferenceImages
+    ?? adapter?.referenceImages?.max
+    ?? adapter?.capabilities?.referenceImages?.max
+    ?? adapter?.capabilities?.image?.maxReferenceImages;
+  if (raw === undefined || raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+}
+
+export function assertAdapterReferenceImageLimit(adapter, params) {
+  const max = adapterMaxReferenceImages(adapter);
+  if (max === null) return;
+  const count = countReferenceImages(params?.image);
+  if (count <= max) return;
+  throw new Error(t("plugin.imageGen.referenceImageLimitExceeded", {
+    providerId: adapter?.id || "unknown",
+    max,
+    count,
+  }));
 }
 
 export function imageDeferredMeta({ prompt, deliveryTarget = null }: any = {}) {
@@ -363,6 +395,11 @@ export async function retryImageTask({ taskId, ctx }) {
 
   const params = normalizeRetryParams(task);
   if (!params) return retryError(409, "task has no reusable prompt");
+  try {
+    assertAdapterReferenceImageLimit(adapter, params);
+  } catch (err) {
+    return retryError(400, errorMessage(err));
+  }
 
   const prompt = typeof task.prompt === "string" && task.prompt.trim()
     ? task.prompt
