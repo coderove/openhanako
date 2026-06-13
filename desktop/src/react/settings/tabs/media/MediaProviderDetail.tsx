@@ -16,16 +16,23 @@ interface Props {
     models: { id: string; name: string; protocolId?: string }[];
     availableModels: { id: string; name: string }[];
   };
-  config: { defaultImageModel?: { id: string; provider: string }; providerDefaults?: Record<string, any> };
+  capability?: 'imageGeneration' | 'videoGeneration';
+  config: {
+    defaultImageModel?: { id: string; provider: string };
+    defaultVideoModel?: { id: string; provider: string };
+    providerDefaults?: Record<string, any>;
+  };
   onSaveConfig: (updates: any) => Promise<void>;
   onRefresh: () => Promise<void>;
 }
 
-export function MediaProviderDetail({ providerId, provider, config, onSaveConfig, onRefresh }: Props) {
+export function MediaProviderDetail({ providerId, provider, capability = 'imageGeneration', config, onSaveConfig, onRefresh }: Props) {
   const showToast = useSettingsStore(s => s.showToast);
+  const mediaRoute = capability === 'videoGeneration' ? 'video' : 'image';
+  const defaultModel = capability === 'videoGeneration' ? config.defaultVideoModel : config.defaultImageModel;
   const defaults = config.providerDefaults?.[providerId] || {};
   const isDefault = (modelId: string) =>
-    config.defaultImageModel?.id === modelId && config.defaultImageModel?.provider === providerId;
+    defaultModel?.id === modelId && defaultModel?.provider === providerId;
 
   const updateDefault = (key: string, value: any) => {
     const current = config.providerDefaults || {};
@@ -38,7 +45,7 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
   const addModel = async (modelId: string) => {
     try {
       const candidate = allModels.find(m => m.id === modelId) || { id: modelId };
-      await hanaFetch(`/api/media/image/providers/${encodeURIComponent(providerId)}/models`, {
+      await hanaFetch(`/api/media/${mediaRoute}/providers/${encodeURIComponent(providerId)}/models`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: candidate }),
@@ -54,7 +61,7 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
 
   const removeModel = async (modelId: string) => {
     try {
-      await hanaFetch(`/api/media/image/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`, {
+      await hanaFetch(`/api/media/${mediaRoute}/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`, {
         method: 'DELETE',
       });
       invalidateConfigCache();
@@ -76,9 +83,15 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
   const allModels = [...provider.models, ...provider.availableModels];
   const trimmedSearch = search.trim();
   const query = trimmedSearch.toLowerCase();
-  const filtered = query ? allModels.filter(m => m.id.toLowerCase().includes(query) || m.name.toLowerCase().includes(query)) : allModels;
+  const filtered = query ? allModels.filter(m => m.id.toLowerCase().includes(query) || (m.name || m.id).toLowerCase().includes(query)) : allModels;
   const hasExactCandidate = allModels.some(m => m.id.toLowerCase() === query);
   const canAddCustom = !!trimmedSearch && !hasExactCandidate && !addedIds.has(trimmedSearch);
+  const modelsLabel = capability === 'videoGeneration'
+    ? t('settings.media.videoModels')
+    : t('settings.media.models');
+  const addModelLabel = capability === 'videoGeneration'
+    ? t('settings.media.addVideoModel')
+    : t('settings.media.addModel');
 
   const panelStyle = useAnchoredDropdown({
     open: dropdownOpen,
@@ -107,9 +120,9 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
       <div className={styles['pv-models']}>
         {/* Added model list */}
         {provider.models.length > 0 && (
-          <div className={styles['pv-fav-section']}>
-            <div className={styles['pv-fav-title']}>
-              {t('settings.media.models')}
+            <div className={styles['pv-fav-section']}>
+              <div className={styles['pv-fav-title']}>
+              {modelsLabel}
               <span className={styles['pv-models-count']}>{provider.models.length}</span>
             </div>
             <div className={styles['pv-fav-list']}>
@@ -142,7 +155,7 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
         {/* Add model dropdown */}
         <div className={styles['pv-models-action-row']}>
           <button ref={triggerRef} className={styles['pv-model-dropdown-trigger']} onClick={() => setDropdownOpen(!dropdownOpen)}>
-            <span>{t('settings.media.addModel')}</span>
+            <span>{addModelLabel}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6 9 12 15 18 9" />
             </svg>
@@ -202,19 +215,21 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
             {t('settings.media.providerDefaults')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {t('settings.media.size')}
-              </span>
-              <SelectWidget
-                value={defaults.size || ''}
-                onChange={(v) => updateDefault('size', v || undefined)}
-                options={[
-                  { value: '2K', label: '2K' },
-                  { value: '4K', label: '4K' },
-                ]}
-              />
-            </div>
+            {capability === 'imageGeneration' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {t('settings.media.size')}
+                </span>
+                <SelectWidget
+                  value={defaults.size || ''}
+                  onChange={(v) => updateDefault('size', v || undefined)}
+                  options={[
+                    { value: '2K', label: '2K' },
+                    { value: '4K', label: '4K' },
+                  ]}
+                />
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {t('settings.media.aspectRatio')}
@@ -235,36 +250,73 @@ export function MediaProviderDetail({ providerId, provider, config, onSaveConfig
                 ]}
               />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {t('settings.media.format')}
-              </span>
-              <SelectWidget
-                value={defaults.format || ''}
-                onChange={(v) => updateDefault('format', v || undefined)}
-                options={[
-                  { value: '',     label: t('settings.media.defaultOption') },
-                  { value: 'png',  label: 'PNG' },
-                  { value: 'jpeg', label: 'JPEG' },
-                  { value: 'webp', label: 'WebP' },
-                ]}
-              />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {t('settings.media.quality')}
-              </span>
-              <SelectWidget
-                value={defaults.quality || ''}
-                onChange={(v) => updateDefault('quality', v || undefined)}
-                options={[
-                  { value: '',       label: t('settings.media.defaultOption') },
-                  { value: 'low',    label: t('settings.media.qualityLow') },
-                  { value: 'medium', label: t('settings.media.qualityMedium') },
-                  { value: 'high',   label: t('settings.media.qualityHigh') },
-                ]}
-              />
-            </div>
+            {capability === 'videoGeneration' ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {t('settings.media.duration')}
+                  </span>
+                  <SelectWidget
+                    value={defaults.duration ? String(defaults.duration) : ''}
+                    onChange={(v) => updateDefault('duration', v ? Number(v) : undefined)}
+                    options={[
+                      { value: '',   label: t('settings.media.defaultOption') },
+                      { value: '5',  label: '5s' },
+                      { value: '10', label: '10s' },
+                      { value: '15', label: '15s' },
+                    ]}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {t('settings.media.frameRate')}
+                  </span>
+                  <SelectWidget
+                    value={defaults.frame_rate ? String(defaults.frame_rate) : ''}
+                    onChange={(v) => updateDefault('frame_rate', v ? Number(v) : undefined)}
+                    options={[
+                      { value: '',   label: t('settings.media.defaultOption') },
+                      { value: '24', label: '24 fps' },
+                      { value: '30', label: '30 fps' },
+                      { value: '60', label: '60 fps' },
+                    ]}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {t('settings.media.format')}
+                  </span>
+                  <SelectWidget
+                    value={defaults.format || ''}
+                    onChange={(v) => updateDefault('format', v || undefined)}
+                    options={[
+                      { value: '',     label: t('settings.media.defaultOption') },
+                      { value: 'png',  label: 'PNG' },
+                      { value: 'jpeg', label: 'JPEG' },
+                      { value: 'webp', label: 'WebP' },
+                    ]}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {t('settings.media.quality')}
+                  </span>
+                  <SelectWidget
+                    value={defaults.quality || ''}
+                    onChange={(v) => updateDefault('quality', v || undefined)}
+                    options={[
+                      { value: '',       label: t('settings.media.defaultOption') },
+                      { value: 'low',    label: t('settings.media.qualityLow') },
+                      { value: 'medium', label: t('settings.media.qualityMedium') },
+                      { value: 'high',   label: t('settings.media.qualityHigh') },
+                    ]}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

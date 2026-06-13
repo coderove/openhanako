@@ -402,4 +402,93 @@ describe("UniversalMediaManager response delivery", () => {
 
     manager.stop();
   });
+
+  it("uses the default video model config when no video provider is specified", async () => {
+    const root = makeRoot();
+    roots.push(root);
+    const providerRegistry = {
+      getMediaProviders: () => [],
+      resolveMediaModel: vi.fn(() => ({
+        providerId: "agnes",
+        model: { id: "agnes-video-v2.0", protocolId: "agnes-videos" },
+        credentialLane: null,
+      })),
+    };
+    const manager = new UniversalMediaManager({
+      hanakoHome: root,
+      preferences: makePreferences(root, {
+        videoGeneration: {
+          defaultVideoModel: { provider: "agnes", id: "agnes-video-v2.0" },
+        },
+      }),
+      providerRegistry,
+      registerSessionFile: () => {},
+    });
+    const bus = makeBus();
+    manager.start(bus);
+    const submit = vi.fn(async () => ({ taskId: "agnes-video-task", providerTaskId: "video-provider-task" }));
+    manager.registerAdapter({
+      id: "agnes-videos",
+      protocolId: "agnes-videos",
+      types: ["video"],
+      submit,
+    });
+
+    await manager.generateVideoFromBus({
+      prompt: "animate a quiet desk",
+      delivery: { mode: "response" },
+    });
+
+    expect(providerRegistry.resolveMediaModel).toHaveBeenCalledWith({
+      providerId: "agnes",
+      modelId: "agnes-video-v2.0",
+      capability: "video_generation",
+    });
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "agnes",
+        modelId: "agnes-video-v2.0",
+        credentialProviderId: "agnes",
+      }),
+      expect.any(Object),
+    );
+
+    manager.stop();
+  });
+
+  it("resolves video reference images through session-owned SessionFile records", async () => {
+    const root = makeRoot();
+    roots.push(root);
+    const sessionFiles = new SessionFileRegistry();
+    const sessionPath = makeSessionPath(root, "video-session.jsonl");
+    const imagePath = makeTempFile(root, "refs/video-cover.png", "png");
+    const image = sessionFiles.registerFile({
+      sessionPath,
+      filePath: imagePath,
+      origin: "user_upload",
+      storageKind: "managed_cache",
+    });
+    const manager = makeManager(root, makePreferences(root), { sessionFiles });
+    (manager as any).submitVideo = async (payload) => ({
+      ok: true,
+      input: payload.input,
+      sessionPath: payload.sessionPath,
+    });
+
+    const result = await manager.generateVideoFromBus({
+      sessionPath,
+      prompt: "animate from ref",
+      referenceImages: [{ kind: "session_file", fileId: image.id }],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      sessionPath,
+      input: {
+        prompt: "animate from ref",
+        referenceImages: [imagePath],
+        image: [imagePath],
+      },
+    });
+  });
 });

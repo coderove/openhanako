@@ -480,6 +480,49 @@ describe("agnes adapters", () => {
       files: ["video_123.mp4"],
     });
   });
+
+  it("falls back to the Agnes legacy task_id result endpoint when video_id query is unavailable", async () => {
+    const { agnesVideoAdapter } = await import("../plugins/image-gen/adapters/agnes.ts");
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { message: "not found" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "task_123",
+          task_id: "task_123",
+          video_id: "video_123",
+          status: "completed",
+          remixed_from_video_id: "https://storage.example.com/legacy-agnes.mp4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => Buffer.from("legacy-video-bytes"),
+      });
+
+    const ctx = {
+      ...makeBusCtx("agnes-key", "https://apihub.agnes-ai.com/v1", "agnes"),
+      task: {
+        taskId: "task_123",
+        adapterTaskId: "video_123",
+        modelId: "agnes-video-v2.0",
+      },
+    };
+
+    const queryResult = await agnesVideoAdapter.query("video_123", ctx);
+
+    expect(mockFetch.mock.calls[0][0]).toBe("https://apihub.agnes-ai.com/agnesapi?video_id=video_123&model_name=agnes-video-v2.0");
+    expect(mockFetch.mock.calls[1][0]).toBe("https://apihub.agnes-ai.com/v1/videos/task_123");
+    expect(queryResult).toMatchObject({
+      status: "success",
+      files: ["video_123.mp4"],
+    });
+  });
 });
 
 describe("openai codex oauth adapter", () => {
