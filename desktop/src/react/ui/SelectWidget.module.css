@@ -139,6 +139,24 @@
   margin-left: auto;
 }
 
+.checkIcon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  margin-left: auto;
+  color: currentColor;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.optionDesc + .checkIcon {
+  margin-left: var(--space-xs);
+}
+
+.selected .checkIcon {
+  opacity: 0.72;
+}
+
 .option:hover .optionDesc {
   color: var(--accent);
   opacity: 0.6;
