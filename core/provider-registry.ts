@@ -338,6 +338,7 @@ import { xaiPlugin } from "../lib/providers/xai.ts";
 import { dashscopeCodingPlugin } from "../lib/providers/dashscope-coding.ts";
 import { kimiCodingPlugin } from "../lib/providers/kimi-coding.ts";
 import { volcegineCodingPlugin } from "../lib/providers/volcengine-coding.ts";
+import { zhipuCodingPlugin } from "../lib/providers/zhipu-coding.ts";
 
 const BUILTIN_PLUGINS = [
   agnesPlugin,
@@ -377,6 +378,7 @@ const BUILTIN_PLUGINS = [
   dashscopeCodingPlugin,
   kimiCodingPlugin,
   volcegineCodingPlugin,
+  zhipuCodingPlugin,
 ];
 
 // ── Types (JSDoc) ─────────────────────────────────────────────────────────────

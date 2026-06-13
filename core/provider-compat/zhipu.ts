@@ -42,6 +42,7 @@ export function matches(model) {
   const provider = lower(model.provider);
   const baseUrl = lower(model.baseUrl || model.base_url);
   return provider === "zhipu"
+    || provider === "zhipu-coding"
     || baseUrl.includes("open.bigmodel.cn")
     || (
       baseUrl.includes("api.z.ai")

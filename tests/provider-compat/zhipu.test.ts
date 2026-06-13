@@ -21,6 +21,7 @@ const glm52Model = {
 describe("provider-compat/zhipu — matches", () => {
   it("matches official provider and BigModel OpenAI-compatible endpoints", () => {
     expect(zhipu.matches({ provider: "zhipu" })).toBe(true);
+    expect(zhipu.matches({ provider: "zhipu-coding" })).toBe(true);
     expect(zhipu.matches({
       provider: "custom",
       baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",

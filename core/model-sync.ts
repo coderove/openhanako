@@ -85,7 +85,15 @@ function shouldReusePiBuiltinModel(provider, modelId, api) {
 function isZhipuOpenAICompat(provider, baseUrl, api) {
   return api === "openai-completions" && (
     provider === "zhipu"
+    || provider === "zhipu-coding"
     || baseUrl.includes("open.bigmodel.cn")
+    || (
+      baseUrl.includes("api.z.ai")
+      && (
+        baseUrl.includes("/api/paas/v4")
+        || baseUrl.includes("/api/coding/paas/v4")
+      )
+    )
   );
 }
 

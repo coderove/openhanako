@@ -123,6 +123,28 @@ describe("getCredentials", () => {
     );
   });
 
+  it("registers GLM Coding Plan as a fixed-list Zhipu OpenAI-compatible provider", () => {
+    writeAddedModels({});
+    const reg = new ProviderRegistry(tmpDir);
+
+    const entry = reg.get("zhipu-coding");
+
+    expect(entry).toMatchObject({
+      id: "zhipu-coding",
+      displayName: "智谱 GLM Coding Plan",
+      authType: "api-key",
+      baseUrl: "https://api.z.ai/api/coding/paas/v4",
+      api: "openai-completions",
+      isBuiltin: true,
+    });
+    expect(reg.getDefaultModels("zhipu-coding")).toEqual([
+      "glm-5.2",
+      "glm-5-turbo",
+      "glm-4.7",
+      "glm-4.5-air",
+    ]);
+  });
+
   it("返回已配置 provider 的 apiKey/baseUrl/api", () => {
     writeAddedModels({
       "test-provider": {

@@ -47,6 +47,9 @@ const KNOWN_MODELS = {
   zhipu: {
     "glm-4.7-flash": { name: "GLM-4.7 Flash", context: 200000, maxOutput: 128000, reasoning: true },
   },
+  "zhipu-coding": {
+    "glm-5.2": { name: "GLM-5.2", context: 1000000, maxOutput: 131072, image: false, reasoning: true, xhigh: true },
+  },
   anthropic: {
     "claude-fable-5": {
       name: "Claude Fable 5",
@@ -1515,6 +1518,43 @@ describe("syncModels", () => {
       supportsReasoningEffort: false,
       thinkingFormat: "zhipu",
       reasoningProfile: "zhipu-openai",
+    });
+  });
+
+  it("projects GLM Coding Plan through the Z.AI OpenAI-compatible endpoint with Zhipu thinking compat", async () => {
+    const syncModels = await loadSync();
+
+    const providers = {
+      "zhipu-coding": {
+        base_url: "https://api.z.ai/api/coding/paas/v4",
+        api: "openai-completions",
+        api_key: "sk-test",
+        models: ["glm-5.2"],
+      },
+    };
+
+    syncModels(providers, { modelsJsonPath });
+
+    const result = JSON.parse(fs.readFileSync(modelsJsonPath, "utf-8"));
+    expect(result.providers["zhipu-coding"]).toMatchObject({
+      baseUrl: "https://api.z.ai/api/coding/paas/v4",
+      api: "openai-completions",
+      apiKey: "hana-runtime-api-key:zhipu-coding",
+    });
+    expect(result.providers["zhipu-coding"].models[0]).toMatchObject({
+      id: "glm-5.2",
+      name: "GLM-5.2",
+      contextWindow: 1000000,
+      maxTokens: 131072,
+      reasoning: true,
+      xhigh: true,
+      compat: {
+        supportsDeveloperRole: false,
+        supportsStore: false,
+        supportsReasoningEffort: false,
+        thinkingFormat: "zhipu",
+        reasoningProfile: "zhipu-openai",
+      },
     });
   });
 

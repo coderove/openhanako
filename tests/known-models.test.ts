@@ -156,6 +156,30 @@ describe("known-models dictionary", () => {
     expect(defaultModels.zhipu[0]).toBe("glm-5.2");
   });
 
+  it("declares GLM Coding Plan fixed models under the Zhipu coding provider", () => {
+    expect(defaultModels["zhipu-coding"]).toEqual([
+      "glm-5.2",
+      "glm-5-turbo",
+      "glm-4.7",
+      "glm-4.5-air",
+    ]);
+    expect(lookupKnown("zhipu-coding", "glm-5.2")).toMatchObject({
+      name: "GLM-5.2",
+      context: 1000000,
+      maxOutput: 131072,
+      image: false,
+      reasoning: true,
+      xhigh: true,
+    });
+    for (const id of ["glm-5-turbo", "glm-4.7", "glm-4.5-air"]) {
+      expect(lookupKnown("zhipu-coding", id)).toMatchObject({
+        context: 200000,
+        image: false,
+        reasoning: true,
+      });
+    }
+  });
+
   it("declares Agnes 2.0 Flash as a curated OpenAI-compatible multimodal agent model", () => {
     expect(defaultModels.agnes).toEqual(["agnes-2.0-flash"]);
     expect(lookupKnown("agnes", "agnes-2.0-flash")).toMatchObject({
