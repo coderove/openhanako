@@ -86,10 +86,26 @@ const MODEL_THINKING_FORMATS = new Set([
 ]);
 
 const MODEL_REASONING_PROFILES = new Set([
+  "anthropic-adaptive-only",
   "deepseek-v4-anthropic",
   "deepseek-v4-openai",
   "mimo-openai",
+  "openrouter-anthropic-adaptive",
   "zhipu-openai",
+]);
+
+const TOOL_USE_DIALECTS = new Set([
+  "openai",
+  "anthropic",
+  "gemini",
+  "mistral",
+  "none",
+]);
+
+const TOOL_RESULT_FORMATS = new Set([
+  "message",
+  "content_block",
+  "part",
 ]);
 
 export function normalizeModelProtocolCompat(value: any): Record<string, any> | null {
@@ -112,6 +128,32 @@ export function normalizeModelProtocolCompat(value: any): Record<string, any> | 
   return Object.keys(out).length > 0 ? out : null;
 }
 
+export function normalizeToolUseContract(value: any): Record<string, any> | null {
+  if (!isPlainObject(value)) return null;
+  if (typeof value.supportsTools !== "boolean") return null;
+
+  const dialect = lower(value.dialect);
+  if (!TOOL_USE_DIALECTS.has(dialect)) return null;
+  const toolResultFormat = lower(value.toolResultFormat);
+  if (!TOOL_RESULT_FORMATS.has(toolResultFormat)) return null;
+
+  const out: Record<string, any> = {
+    supportsTools: value.supportsTools,
+    dialect,
+    toolResultFormat,
+  };
+  if (typeof value.supportsParallelToolCalls === "boolean") {
+    out.supportsParallelToolCalls = value.supportsParallelToolCalls;
+  }
+  if (typeof value.supportsForcedToolChoice === "boolean") {
+    out.supportsForcedToolChoice = value.supportsForcedToolChoice;
+  }
+  if (typeof value.supportsServerTools === "boolean") {
+    out.supportsServerTools = value.supportsServerTools;
+  }
+  return out;
+}
+
 export function isOfficialMimoEndpoint(model: any, context: any = {}) {
   const provider = getProvider(model, context);
   if (OFFICIAL_MIMO_PROVIDERS.has(provider)) return true;
@@ -125,11 +167,27 @@ function isOfficialZhipuEndpoint(model: any, context: any = {}) {
   if (provider === "zhipu") return true;
 
   const host = getBaseHost(model, context);
-  return host === "open.bigmodel.cn" || host.endsWith(".open.bigmodel.cn");
+  const baseUrl = getBaseUrl(model, context);
+  return host === "open.bigmodel.cn"
+    || host.endsWith(".open.bigmodel.cn")
+    || (
+      host === "api.z.ai"
+      && (
+        baseUrl.includes("/api/paas/v4")
+        || baseUrl.includes("/api/coding/paas/v4")
+      )
+    );
 }
 
 function isDeepSeekV4ModelId(id: string): boolean {
   return id === "deepseek-v4" || id.startsWith("deepseek-v4-") || id.startsWith("deepseek-v4.");
+}
+
+function isAnthropicAdaptiveOnlyModelId(id: string): boolean {
+  return id === "claude-fable-5"
+    || id === "claude-mythos-5"
+    || id === "anthropic/claude-fable-5"
+    || id === "anthropic/claude-mythos-5";
 }
 
 function isDeepSeekThinkingModelId(id: string): boolean {
@@ -257,7 +315,22 @@ export function getReasoningProfile(model: any, context: any = {}) {
   const explicit = lower(model.compat?.reasoningProfile || model.compat?.thinkingProfile);
   if (explicit) return explicit;
 
-  if (isOpenRouterEndpoint(model, context)) return null;
+  const modelId = getModelId(model, context);
+
+  if (isOpenRouterEndpoint(model, context)) {
+    if (model.reasoning === true && isAnthropicAdaptiveOnlyModelId(modelId)) {
+      return "openrouter-anthropic-adaptive";
+    }
+    return null;
+  }
+
+  if (
+    model.reasoning === true
+    && isAnthropicAdaptiveOnlyModelId(modelId)
+    && getThinkingFormat(model, context) === "anthropic"
+  ) {
+    return "anthropic-adaptive-only";
+  }
 
   if (isOfficialMimoEndpoint(model, context) && model.reasoning === true) {
     const api = getApi(model, context);
@@ -274,7 +347,6 @@ export function getReasoningProfile(model: any, context: any = {}) {
   }
 
   if (isOfficialDeepSeekEndpoint(model, context)) {
-    const modelId = getModelId(model, context);
     if (!isDeepSeekV4ModelId(modelId)) return null;
 
     const api = getApi(model, context);

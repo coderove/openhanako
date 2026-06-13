@@ -328,14 +328,16 @@
       "auto": "自動",
       "medium": "中",
       "high": "深い",
-      "xhigh": "最大"
+      "xhigh": "最大",
+      "max": "最大"
     },
     "thinkingDesc": {
       "off": "推論なし",
       "auto": "モデルが深さを判断",
       "medium": "バランス推論",
       "high": "深い推論",
-      "xhigh": "フル推論"
+      "xhigh": "最大推論",
+      "max": "最大推論"
     },
     "contextWindow": "コンテキスト {windowK}k",
     "tokensUsed": "使用済み {tokensK}k ({pct}%)",
@@ -1409,6 +1411,7 @@
         "medium": "標準",
         "high": "高",
         "auto": "自動",
+        "max": "最大",
         "xhigh": "最大"
       },
       "addedModels": "追加済みモデル",

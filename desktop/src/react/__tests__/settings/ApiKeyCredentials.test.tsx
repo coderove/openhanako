@@ -180,6 +180,81 @@ describe('ApiKeyCredentials', () => {
     expect(body).not.toHaveProperty('api_key', 'sk-real-provider-key');
   });
 
+  it('lets a revealed saved api key be replaced directly', async () => {
+    const onRefresh = vi.fn(async () => {});
+    mocks.hanaFetch
+      .mockResolvedValueOnce(jsonResponse({ api_key: 'sk-real-provider-key' }))
+      .mockResolvedValue(jsonResponse({ ok: true }));
+
+    const { container } = render(
+      <ApiKeyCredentials
+        providerId="deepseek"
+        summary={providerSummary({ api_key: '********', has_credentials: true })}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    const revealButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'settings.api.showKey') as HTMLButtonElement | undefined;
+    fireEvent.click(revealButton as HTMLButtonElement);
+
+    const input = await waitFor(() => {
+      const el = container.querySelector('input[type="text"]') as HTMLInputElement | null;
+      expect(el).toHaveValue('sk-real-provider-key');
+      return el as HTMLInputElement;
+    });
+
+    fireEvent.change(input, { target: { value: 'sk-replacement-key' } });
+    expect(input).toHaveValue('sk-replacement-key');
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.hanaFetch).toHaveBeenCalledWith(
+      '/api/config',
+      expect.objectContaining({ method: 'PUT' }),
+    ));
+    const configCall = mocks.hanaFetch.mock.calls.find(([path]) => path === '/api/config');
+    expect(JSON.parse(String((configCall?.[1] as RequestInit).body))).toEqual({
+      providers: { deepseek: { api_key: 'sk-replacement-key' } },
+    });
+  });
+
+  it('does not persist the revealed secret when editing begins from transient text', async () => {
+    const onRefresh = vi.fn(async () => {});
+    mocks.hanaFetch
+      .mockResolvedValueOnce(jsonResponse({ api_key: 'sk-real-provider-key' }))
+      .mockResolvedValue(jsonResponse({ ok: true }));
+
+    const { container } = render(
+      <ApiKeyCredentials
+        providerId="deepseek"
+        summary={providerSummary({ api_key: '********', has_credentials: true })}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    const revealButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'settings.api.showKey') as HTMLButtonElement | undefined;
+    fireEvent.click(revealButton as HTMLButtonElement);
+
+    const input = await waitFor(() => {
+      const el = container.querySelector('input[type="text"]') as HTMLInputElement | null;
+      expect(el).toHaveValue('sk-real-provider-key');
+      return el as HTMLInputElement;
+    });
+
+    fireEvent.change(input, { target: { value: 'sk-real-provider-keyx' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.hanaFetch).toHaveBeenCalledWith(
+      '/api/config',
+      expect.objectContaining({ method: 'PUT' }),
+    ));
+    const configCall = mocks.hanaFetch.mock.calls.find(([path]) => path === '/api/config');
+    expect(JSON.parse(String((configCall?.[1] as RequestInit).body))).toEqual({
+      providers: { deepseek: { api_key: 'x' } },
+    });
+  });
+
   it('persists edited Kimi API keys on input blur without requiring connection verification', async () => {
     const onRefresh = vi.fn(async () => {});
     const { container } = render(

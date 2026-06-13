@@ -328,14 +328,16 @@
       "auto": "自動",
       "medium": "中等",
       "high": "深度",
-      "xhigh": "極限"
+      "xhigh": "極致",
+      "max": "極致"
     },
     "thinkingDesc": {
       "off": "不推理",
       "auto": "模型決定深度",
       "medium": "平衡推理",
       "high": "深度推理",
-      "xhigh": "最強推理"
+      "xhigh": "極致推理",
+      "max": "極致推理"
     },
     "contextWindow": "上下文 {windowK}k",
     "tokensUsed": "已用 {tokensK}k ({pct}%)",
@@ -1401,7 +1403,8 @@
         "medium": "中等",
         "high": "深思",
         "auto": "自動",
-        "xhigh": "極限"
+        "max": "極致",
+        "xhigh": "極致"
       },
       "addedModels": "已新增的模型",
       "displayName": "顯示名稱",
