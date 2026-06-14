@@ -96,6 +96,50 @@ describe("generate-video tool — metadata", () => {
       type: "object",
     });
   });
+
+  it("delegates video generation to the universal media bus instead of the legacy adapter path", async () => {
+    const mod = await import("../plugins/image-gen/tools/generate-video.ts");
+    const legacyMediaGen = makeMediaGen();
+    const request = vi.fn(async () => ({
+      ok: true,
+      kind: "video",
+      batchId: "batch-video",
+      prompt: "a moonlit room",
+      delivery: { mode: "session" },
+      tasks: [{ taskId: "task-video" }],
+    }));
+
+    const result = await mod.execute({
+      prompt: "a moonlit room",
+      provider: "agnes",
+      model: "video-model",
+      duration: 5,
+      ratio: "16:9",
+      options: { camera: "slow pan" },
+    }, makeCtx(legacyMediaGen, { request }));
+
+    expect(request).toHaveBeenCalledWith("media:generate-video", {
+      sessionPath: "/sessions/test.jsonl",
+      input: {
+        prompt: "a moonlit room",
+        duration: 5,
+        ratio: "16:9",
+        model: "video-model",
+        provider: "agnes",
+        options: { camera: "slow pan" },
+      },
+    });
+    expect(legacyMediaGen.registry.get).not.toHaveBeenCalled();
+    expect(legacyMediaGen.registry.getByType).not.toHaveBeenCalled();
+    expect(legacyMediaGen.store.add).not.toHaveBeenCalled();
+    expect(legacyMediaGen.poller.add).not.toHaveBeenCalled();
+    expect(result.details.mediaGeneration).toMatchObject({
+      kind: "video",
+      batchId: "batch-video",
+      prompt: "a moonlit room",
+      tasks: [{ taskId: "task-video" }],
+    });
+  });
 });
 
 describe("describe-media-options tool", () => {
