@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import ntpath
 import os
+import posixpath
 import re
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 
 SDK_PACKAGES = {
@@ -78,9 +80,25 @@ def package_version(root_package: dict, name: str, fallback: str) -> str:
     return fallback
 
 
+def uses_windows_path_flavor(path: PurePath) -> bool:
+    return isinstance(path, PureWindowsPath) or bool(path.drive)
+
+
+def path_module_for(*paths: PurePath):
+    if any(uses_windows_path_flavor(path) for path in paths):
+        return ntpath
+    return posixpath
+
+
 def relative_file_spec(from_dir: Path, target: Path) -> str:
-    rel = os.path.relpath(target, from_dir)
-    return "file:" + rel.replace(os.sep, "/")
+    path_module = path_module_for(from_dir, target)
+    try:
+        rel = path_module.relpath(str(target), str(from_dir))
+    except ValueError:
+        if not target.is_absolute():
+            raise
+        return target.as_uri()
+    return "file:" + rel.replace("\\", "/")
 
 
 def choose_template(template: str, audience: str) -> str:
