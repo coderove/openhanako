@@ -104,6 +104,15 @@
     "filesUnsupported": "Channels currently support text only; files will not be attached to chat",
     "createIntroOptional": "Description"
   },
+  "skills": {
+    "panel": {
+      "title": "Skills",
+      "allTab": "All Skills",
+      "agentTabs": "View skills by assistant",
+      "previousAgent": "Previous assistant",
+      "nextAgent": "Next assistant"
+    }
+  },
   "sidebar": {
     "title": "Chats",
     "newChat": "New Chat",

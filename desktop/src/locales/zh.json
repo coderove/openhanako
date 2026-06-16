@@ -104,6 +104,15 @@
     "toolWrite": "写入",
     "filesUnsupported": "频道暂只支持文本消息，文件不会加入普通聊天附件"
   },
+  "skills": {
+    "panel": {
+      "title": "Skills 管理",
+      "allTab": "全部技能",
+      "agentTabs": "按助手查看技能",
+      "previousAgent": "上一个助手",
+      "nextAgent": "下一个助手"
+    }
+  },
   "sidebar": {
     "title": "对话",
     "newChat": "新对话",
