@@ -25,9 +25,32 @@ Built-in plugins may use the same source patterns, but they should be checked ag
 
 Plugin server code is installed and loaded by the Studio server. Plugin iframe assets are also served by that server; the desktop renderer, Mobile PWA, or browser client may cache them, but client locality must not decide whether a plugin surface, provider, task, config, or tool exists. Declare true client-machine-only actions separately from server workspace actions.
 
+## Production Install Checklist
+
+A plugin installed under `${HANA_HOME}/plugins`, `${HANA_HOME}/plugins-dev`, or a marketplace release is imported from that plugin directory. Bare package imports in server-side plugin code resolve from the plugin package, not from the Hana repository, the desktop renderer, or the packaged server root. A `package.json` beside the plugin is only metadata unless the dependency files are also present or the code has been bundled.
+
+Before copying or zipping a plugin outside the monorepo, inspect every server-side entry point:
+
+- `index.js` / `index.ts`
+- `tools/*`
+- `routes/*`
+- `providers/*`
+- `extensions/*`
+- any helper file imported by those files
+
+If any of those files import `@hana/plugin-runtime`, `@hana/plugin-sdk`, `@hana/plugin-components`, or another bare package name, the installed plugin must satisfy that import without relying on workspace symlinks. Use one of these release shapes:
+
+- Bundle the server-side plugin code so the installed file no longer contains unresolved SDK imports.
+- Ship a plugin directory or release zip that already contains the installed dependencies needed by Node's resolver. Do not assume Hana will run `npm install` during plugin installation.
+- Avoid the SDK helper for that entry point and use the host objects already passed by the plugin manager, such as `ctx` for lifecycle, tool, and route code.
+
+`--sdk-mode workspace` is only for source development inside the Hana monorepo. Do not drag a workspace-mode plugin directory into `${HANA_HOME}/plugins` or publish it as a release package. `--sdk-mode bundled` copies SDK tarballs for the plugin's own install or build step; the final installed directory must still be smoke-tested as an extracted plugin, with no dependency on the repo root `node_modules`.
+
+The production smoke test is: install the exact folder or zip that users will receive, then check plugin diagnostics and server logs for `Cannot find package` or other import errors. A plugin that loads in the repo but fails from `${HANA_HOME}/plugins` has crossed the runtime boundary incorrectly.
+
 ## Plugin Shape Guide
 
-- Tool-only plugins usually need only `tools/*.js` and `@hana/plugin-runtime` helpers. They can stay `restricted`.
+- Tool-only plugins can stay `restricted`. No-build tools may export the static tool contract directly; tools that import `@hana/plugin-runtime` must still satisfy the production install checklist above.
 - Runtime plugins use `index.js` for lifecycle, EventBus handlers, background tasks, schedules, or dynamic tools. They require `trust: "full-access"`.
 - UI plugins use iframe routes plus `@hana/plugin-sdk` and, for React UI, `@hana/plugin-components`. They require `trust: "full-access"` and explicit `ui.hostCapabilities` grants for host calls such as `external.open` or `clipboard.writeText`.
 - Provider contribution plugins use `providers/*.js` declarations. They require `trust: "full-access"` and should declare `capabilities.chat` separately from `capabilities.media.*` so chat selectors stay clean while image, video, or speech tools discover media providers. Provider declarations are the long-term model discovery entrypoint; legacy `media-gen:*` adapter/runtime events remain compatibility-only for older image generation plugins.
