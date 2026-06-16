@@ -301,6 +301,8 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
   const pendingNewSession = useStore(s => s.pendingNewSession);
   const pendingSessionSwitchPath = useStore(s => s.pendingSessionSwitchPath);
   const currentSessionPath = useStore(s => s.currentSessionPath);
+  const currentAgentId = useStore(s => s.currentAgentId);
+  const selectedAgentId = useStore(s => s.selectedAgentId);
   const currentSessionProjection = useStore(s => s.currentSessionPath
     ? s.sessions.find(session => session.path === s.currentSessionPath)
     : null);
@@ -350,9 +352,13 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
   );
   const modelSwitching = useStore(s => s.modelSwitching);
   const currentSessionItems = useStore(s => s.currentSessionPath ? s.chatSessions[s.currentSessionPath]?.items : undefined);
+  const storedSessionConfirmation = useStore(s => s.currentSessionPath
+    ? s.pendingSessionConfirmationsByPath[s.currentSessionPath] || null
+    : null);
   const pendingSessionConfirmation = useMemo(() => {
-    return findLatestInputSessionConfirmation(currentSessionItems, undefined, true);
-  }, [currentSessionItems]);
+    return findLatestInputSessionConfirmation(currentSessionItems, undefined, true)
+      || storedSessionConfirmation;
+  }, [currentSessionItems, storedSessionConfirmation]);
 
   // Local state
   const permissionMode = useStore(s => s.sessionPermissionMode);
@@ -664,7 +670,8 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
     await executeCompact(setSlashBusy, () => { editor?.commands.clearContent(); }, setSlashMenuOpen)();
   }, [editor]);
 
-  const skillItems = useSkillSlashItems({ enabled: surface !== 'mobile' });
+  const slashAgentId = pendingNewSession ? (selectedAgentId || currentAgentId) : currentAgentId;
+  const skillItems = useSkillSlashItems({ enabled: surface !== 'mobile', agentId: slashAgentId });
 
   // 注：/stop /new /reset 仅走 bridge 平台（TG/Feishu/...）；桌面端有 GUI，菜单不暴露这些命令。
   // buildSlashCommands 第 5 参留作未来 web/mobile 端需要时再注入。后端 WS 通道 (type:'slash')

@@ -63,6 +63,7 @@ const {
   electronProxyRulesForConfig,
   electronProxyBypassRulesForConfig,
   proxyConfigToEnvironment,
+  systemProxyConfigToEnvironment,
   withForcedLocalProxyBypass,
 } = require("../shared/network-proxy.cjs");
 const {
@@ -228,20 +229,18 @@ async function serverEnvironmentForNetworkProxy(baseEnv) {
     return proxyConfigToEnvironment(config, baseEnv);
   }
 
-  const env = { ...(baseEnv || {}) };
   const [httpProxy, httpsProxy, wsProxy, wssProxy] = await Promise.all([
     resolveElectronProxyUrl("http://example.com"),
     resolveElectronProxyUrl("https://example.com"),
     resolveElectronProxyUrl("ws://example.com"),
     resolveElectronProxyUrl("wss://example.com"),
   ]);
-  if (httpProxy) env.HTTP_PROXY = env.http_proxy = httpProxy;
-  if (httpsProxy) env.HTTPS_PROXY = env.https_proxy = httpsProxy;
-  if (wsProxy) env.WS_PROXY = env.ws_proxy = wsProxy;
-  if (wssProxy) env.WSS_PROXY = env.wss_proxy = wssProxy;
-  const noProxy = withForcedLocalProxyBypass(env.NO_PROXY || env.no_proxy || config.noProxy);
-  if (noProxy) env.NO_PROXY = env.no_proxy = noProxy;
-  return env;
+  return systemProxyConfigToEnvironment({
+    httpProxy,
+    httpsProxy,
+    wsProxy,
+    wssProxy,
+  }, baseEnv, config);
 }
 
 // 按 HANA_HOME 隔离 Electron userData（localStorage / cache / session）
