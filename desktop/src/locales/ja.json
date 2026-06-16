@@ -98,6 +98,15 @@
     "filesUnsupported": "チャンネルは現在テキストのみ対応しています。ファイルはチャット添付に追加されません",
     "createIntroOptional": "説明"
   },
+  "skills": {
+    "panel": {
+      "title": "Skills",
+      "allTab": "すべてのスキル",
+      "agentTabs": "アシスタント別にスキルを表示",
+      "previousAgent": "前のアシスタント",
+      "nextAgent": "次のアシスタント"
+    }
+  },
   "sidebar": {
     "title": "チャット",
     "newChat": "新しいチャット",
@@ -235,6 +244,7 @@
     "empty": "空",
     "edit": "編集",
     "screenshot": "スクリーンショット",
+    "screenshotShare": "スクリーンショット共有",
     "selectMessage": "メッセージを選択",
     "selectAllMessages": "すべてのメッセージを選択",
     "screenshotInProgress": "スクリーンショットを作成中",
@@ -306,7 +316,7 @@
     "deskContext": "デスクのコンテキスト付き",
     "pastedImage": "貼り付け画像",
     "textModelImageFileOnly": "現在のモデルは画像を表示できず、補助ビジョンも有効になっていません。画像はファイルとして送信され、モデルにはファイルパスのみが見え、画像の内容は見えません。",
-    "textModelVideoBlocked": "現在のモデルは動画入力に対応していません。設定で動画能力を有効にするか、動画対応モデルに切り替えてください。",
+    "textModelVideoFileOnly": "現在のモデルは動画を直接表示できません。動画はファイルとして送信され、モデルにはファイルパスのみが見え、動画の内容は見えません。",
     "textModelAudioBlocked": "現在のモデルは音声入力に対応していません。音声対応モデルに切り替えてください。",
     "imageReadFailedSentAsFile": "画像データの読み込みに失敗したため、この画像はファイルパスとして送信されました。モデルには内容が見えません。",
     "videoReadFailed": "動画を読み取れなかったため、メッセージは送信されませんでした。もう一度添付してください。",

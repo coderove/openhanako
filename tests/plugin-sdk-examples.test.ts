@@ -17,6 +17,28 @@ function readBundledSdkFile(tarballName: string, fileName: string) {
 }
 
 describe("plugin SDK examples and docs", () => {
+  it("uses an absolute file URL for workspace SDK dependencies across Windows drives", () => {
+    const scriptPath = path.join(root, "skills2set", "hana-plugin-creator", "scripts", "create_hana_plugin.py");
+    const result = execFileSync("python3", [
+      "-c",
+      [
+        "from pathlib import PureWindowsPath",
+        "import importlib.util",
+        "import sys",
+        "spec = importlib.util.spec_from_file_location('create_hana_plugin', sys.argv[1])",
+        "mod = importlib.util.module_from_spec(spec)",
+        "spec.loader.exec_module(mod)",
+        "print(mod.relative_file_spec(",
+        "    PureWindowsPath('C:/Users/runner/AppData/Local/Temp/hana-ui-scaffold/sdk-panel'),",
+        "    PureWindowsPath('D:/a/openhanako/openhanako/packages/plugin-sdk'),",
+        "))",
+      ].join("\n"),
+      scriptPath,
+    ], { cwd: root, encoding: "utf-8" }).trim();
+
+    expect(result).toBe("file:///D:/a/openhanako/openhanako/packages/plugin-sdk");
+  });
+
   it("documents the SDK package map in a top-level guide", () => {
     const guide = fs.readFileSync(path.join(root, "PLUGIN_SDK.md"), "utf-8");
 
