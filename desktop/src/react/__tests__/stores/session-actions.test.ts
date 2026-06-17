@@ -477,6 +477,53 @@ function jsonResponse(body: unknown, ok = true): Response {
     expect(mockState.currentSessionPath).toBe(newPath);
   });
 
+  it('warns when a deleted-agent continuation succeeds without fresh compaction', async () => {
+    const oldPath = '/tmp/agents/deleted/sessions/old.jsonl';
+    const newPath = '/tmp/agents/hana/sessions/new.jsonl';
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/sessions/continue-deleted-agent') {
+        return jsonResponse({
+          ok: true,
+          path: newPath,
+          agentId: 'hana',
+          agentName: 'Hana',
+          compacted: false,
+          compactionError: 'model unavailable',
+        });
+      }
+      if (url === '/api/sessions') {
+        return jsonResponse([{ path: newPath, agentId: 'hana', agentName: 'Hana', cwd: '/tmp/work' }]);
+      }
+      if (url === '/api/sessions/switch') {
+        return jsonResponse({
+          ok: true,
+          agentId: 'hana',
+          agentName: 'Hana',
+          cwd: '/tmp/work',
+          workspaceFolders: [],
+          memoryEnabled: true,
+          permissionMode: 'ask',
+          accessMode: 'ask',
+        });
+      }
+      if (String(url).startsWith('/api/sessions/messages')) {
+        return jsonResponse({ messages: [], blocks: [], todos: [], hasMore: false });
+      }
+      if (String(url).startsWith('/api/models')) return jsonResponse({});
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const ok = await continueDeletedAgentSession(oldPath);
+
+    expect(ok).toBe(true);
+    expect(mockState.addToast).toHaveBeenCalledWith(
+      expect.stringContaining('model unavailable'),
+      'warning',
+      6000,
+    );
+    expect(mockState.currentSessionPath).toBe(newPath);
+  });
+
   describe('createNewSession cwd draft', () => {
     it('uses the agent home folder and refreshes the visible desk root', async () => {
       (mockState as Record<string, unknown>).deskBasePath = '/workspace/Desktop';
@@ -539,9 +586,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 
     it('uses the runtime new-session permission default instead of the old active session mode', async () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({
-        mode: 'operate',
-        accessMode: 'operate',
-        defaultMode: 'read_only',
+        permissionMode: 'read_only',
       }));
 
       await createNewSession();
@@ -555,8 +600,8 @@ function jsonResponse(body: unknown, ok = true): Response {
     it('initializes pending new-session thinking from the server default', async () => {
       (mockState as Record<string, unknown>).thinkingLevel = 'high';
       mockFetch.mockImplementation(async (url: string) => {
-        if (url === '/api/session-permission-mode') {
-          return jsonResponse({ mode: 'ask', defaultMode: 'ask' });
+        if (url === '/api/preferences/session-permission-default') {
+          return jsonResponse({ permissionMode: 'ask' });
         }
         if (url === '/api/session-thinking-level') {
           return jsonResponse({ thinkingLevel: 'medium' });
@@ -577,8 +622,7 @@ function jsonResponse(body: unknown, ok = true): Response {
         resolveDesk = resolve;
       }));
       mockFetch.mockResolvedValueOnce(jsonResponse({
-        mode: 'ask',
-        defaultMode: 'ask',
+        permissionMode: 'ask',
       }));
 
       const creating = createNewSession();

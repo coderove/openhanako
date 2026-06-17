@@ -1184,6 +1184,7 @@ export class HanaEngine {
   setCurrentSessionPermissionMode(mode) { return this._sessionCoord.setCurrentSessionPermissionMode(mode); }
   setPendingSessionPermissionMode(mode) { return this._sessionCoord.setPendingPermissionMode(mode); }
   getSessionPermissionModeDefault() { return this._sessionCoord.getPermissionModeDefault(); }
+  setSessionPermissionModeDefault(mode) { return this._sessionCoord.setPermissionModeDefault(mode); }
   get accessMode() { return this._sessionCoord.getAccessMode(); }
   setAccessMode(mode) { return this._sessionCoord.setAccessMode(mode); }
   setPlanMode(enabled) { return this._sessionCoord.setPlanMode(enabled); }

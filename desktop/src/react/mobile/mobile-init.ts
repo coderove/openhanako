@@ -88,6 +88,7 @@ export async function initializeMobileRuntime(principal: MobilePrincipal): Promi
 
   const bootstrapRes = await hanaFetch('/api/mobile/bootstrap');
   const bootstrap = await bootstrapRes.json() as MobileBootstrap;
+  const permissionDefault = await rawJson<{ permissionMode?: SessionPermissionMode }>('/api/preferences/session-permission-default');
   applySyncedAppearancePreferences(bootstrap.appearance);
   applyEditorTypography(bootstrap.editor);
 
@@ -126,6 +127,9 @@ export async function initializeMobileRuntime(principal: MobilePrincipal): Promi
     });
   }
   loadAvatars(bootstrap.avatars);
+  if (isSessionPermissionMode(permissionDefault.permissionMode)) {
+    useStore.getState().setPendingNewSessionPermissionMode(permissionDefault.permissionMode);
+  }
 
   await Promise.all([
     loadModels(),

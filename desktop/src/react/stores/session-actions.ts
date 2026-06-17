@@ -699,9 +699,9 @@ export async function createNewSession(options: CreateNewSessionOptions = {}): P
   // 重置 context ring
   useStore.setState({ contextTokens: null, contextWindow: null, contextPercent: null });
   try {
-    const res = await hanaFetch('/api/session-permission-mode');
+    const res = await hanaFetch('/api/preferences/session-permission-default');
     const data = await res.json();
-    const mode = data.defaultMode || data.mode || 'ask';
+    const mode = data.permissionMode || 'ask';
     if (isPendingNewSessionDraftView()) emitSessionPermissionMode(mode);
   } catch {
     if (isPendingNewSessionDraftView()) emitSessionPermissionMode('ask');
@@ -866,6 +866,13 @@ export async function continueDeletedAgentSession(path: string): Promise<boolean
 
     await loadSessions();
     await switchSession(data.path);
+    if (data.compactionError) {
+      useStore.getState().addToast(
+        `${tr('session.deletedAgent.continueCompactionFailed')}: ${data.compactionError}`,
+        'warning',
+        6000,
+      );
+    }
     return true;
   } catch (err) {
     console.error('[session] continue deleted-agent session failed:', err);

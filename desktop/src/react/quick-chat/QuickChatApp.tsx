@@ -195,7 +195,7 @@ export function QuickChatApp() {
         fetch(buildConnectionUrl(conn, '/api/agents?fresh=1'), {
           headers: appendConnectionAuth(conn),
         }),
-        fetch(buildConnectionUrl(conn, '/api/session-permission-mode'), {
+        fetch(buildConnectionUrl(conn, '/api/preferences/session-permission-default'), {
           headers: appendConnectionAuth(conn),
         }),
       ]);
@@ -258,7 +258,7 @@ export function QuickChatApp() {
           fetch(buildConnectionUrl(local, '/api/config'), {
             headers: appendConnectionAuth(local),
           }),
-          fetch(buildConnectionUrl(local, '/api/session-permission-mode'), {
+          fetch(buildConnectionUrl(local, '/api/preferences/session-permission-default'), {
             headers: appendConnectionAuth(local),
           }),
           fetch(buildConnectionUrl(local, '/api/preferences/quick-chat'), {
@@ -481,7 +481,7 @@ export function QuickChatApp() {
     const runtime = await refreshQuickChatRuntimeState({ adoptAgent: true });
     let mode = runtime?.permissionMode || permissionModeRef.current;
     if (!runtime?.permissionMode) {
-      const modeRes = await apiFetch('/api/session-permission-mode');
+      const modeRes = await apiFetch('/api/preferences/session-permission-default');
       const modeData = await modeRes.json();
       mode = resolveQuickChatPermissionMode(modeData);
       applyRuntimePermissionMode(mode);
