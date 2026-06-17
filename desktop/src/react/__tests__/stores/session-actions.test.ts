@@ -586,9 +586,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 
     it('uses the runtime new-session permission default instead of the old active session mode', async () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({
-        mode: 'operate',
-        accessMode: 'operate',
-        defaultMode: 'read_only',
+        permissionMode: 'read_only',
       }));
 
       await createNewSession();
@@ -602,8 +600,8 @@ function jsonResponse(body: unknown, ok = true): Response {
     it('initializes pending new-session thinking from the server default', async () => {
       (mockState as Record<string, unknown>).thinkingLevel = 'high';
       mockFetch.mockImplementation(async (url: string) => {
-        if (url === '/api/session-permission-mode') {
-          return jsonResponse({ mode: 'ask', defaultMode: 'ask' });
+        if (url === '/api/preferences/session-permission-default') {
+          return jsonResponse({ permissionMode: 'ask' });
         }
         if (url === '/api/session-thinking-level') {
           return jsonResponse({ thinkingLevel: 'medium' });
@@ -624,8 +622,7 @@ function jsonResponse(body: unknown, ok = true): Response {
         resolveDesk = resolve;
       }));
       mockFetch.mockResolvedValueOnce(jsonResponse({
-        mode: 'ask',
-        defaultMode: 'ask',
+        permissionMode: 'ask',
       }));
 
       const creating = createNewSession();

@@ -2411,6 +2411,10 @@ export class SessionCoordinator {
     return this._getDefaultPermissionMode();
   }
 
+  setPermissionModeDefault(mode: any) {
+    return this._setDefaultPermissionMode(mode);
+  }
+
   getPermissionMode(sessionPath = this.currentSessionPath) {
     if (!sessionPath) return this._pendingPermissionMode || this._getDefaultPermissionMode();
     const entry = this._sessions.get(sessionPath) || this._hibernatedSessionMeta.get(sessionPath);

@@ -699,9 +699,9 @@ export async function createNewSession(options: CreateNewSessionOptions = {}): P
   // 重置 context ring
   useStore.setState({ contextTokens: null, contextWindow: null, contextPercent: null });
   try {
-    const res = await hanaFetch('/api/session-permission-mode');
+    const res = await hanaFetch('/api/preferences/session-permission-default');
     const data = await res.json();
-    const mode = data.defaultMode || data.mode || 'ask';
+    const mode = data.permissionMode || 'ask';
     if (isPendingNewSessionDraftView()) emitSessionPermissionMode(mode);
   } catch {
     if (isPendingNewSessionDraftView()) emitSessionPermissionMode('ask');
