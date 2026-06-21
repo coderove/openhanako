@@ -16,6 +16,7 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { PreviewEditor } from './react/components/PreviewEditor';
+import { retainViewerLocalFileResourceWatch } from './viewer-resource-events';
 
 type ViewerMode = 'markdown' | 'code' | 'csv';
 
@@ -35,6 +36,8 @@ function typeToMode(type: string): ViewerMode {
 
 // Subset of the renderer-side `window.platform` we use in the viewer.
 interface ViewerPlatform {
+  getServerPort?(): Promise<string | number | null | undefined>;
+  getServerToken?(): Promise<string | null | undefined>;
   readFile(path: string): Promise<string | null>;
   onViewerLoad?(callback: (data: ViewerLoadPayload) => void): void;
   viewerClose?(): void;
@@ -65,7 +68,7 @@ function ViewerApp() {
     });
   }, []);
 
-  // 2. 初始读取
+  // 2. 初始读取 + 后端 ResourceEvent live reload
   useEffect(() => {
     if (!payload?.filePath) return;
     const platform = getPlatform();
@@ -80,21 +83,32 @@ function ViewerApp() {
       setLoadError(message);
     };
 
-    // 初始内容
-    platform.readFile(payload.filePath)
-      .then((c) => {
-        if (cancelled) return;
-        if (c == null) {
-          fail(fileUnavailableError(payload));
-          return;
-        }
-        setLoadError(null);
-        setContent(c);
-      })
-      .catch(fail);
+    const reload = () => {
+      platform.readFile(payload.filePath)
+        .then((c) => {
+          if (cancelled) return;
+          if (c == null) {
+            fail(fileUnavailableError(payload));
+            return;
+          }
+          setLoadError(null);
+          setContent(c);
+        })
+        .catch(fail);
+    };
+
+    reload();
+    const watch = retainViewerLocalFileResourceWatch(payload.filePath, platform, {
+      onChanged: reload,
+    });
+    watch.ready.catch((err) => {
+      if (cancelled) return;
+      console.warn('[viewer] ResourceIO live reload unavailable:', err);
+    });
 
     return () => {
       cancelled = true;
+      watch.release();
     };
   }, [payload?.filePath]);
 
