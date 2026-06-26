@@ -833,8 +833,13 @@ export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>
       const handledSelectionCommitEvents = new WeakSet<Event>();
       const onSelectionCommitEvent = (event: Event) => {
         if (handledSelectionCommitEvents.has(event)) return;
+        if (event instanceof MouseEvent && event.button === 2) return;
         handledSelectionCommitEvents.add(event);
         selectionCommitCbRef.current?.(view);
+      };
+      const onWindowSelectionCommitEvent = (event: Event) => {
+        if (!view.hasFocus) return;
+        onSelectionCommitEvent(event);
       };
       let scrollTimer: ReturnType<typeof setTimeout> | null = null;
       const publishScrollSnapshot = () => {
@@ -898,9 +903,9 @@ export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>
       view.dom.addEventListener('mouseup', onSelectionCommitEvent);
       view.dom.addEventListener('touchend', onSelectionCommitEvent);
       view.dom.addEventListener('keyup', onSelectionCommitEvent);
-      selectionCommitWindow.addEventListener('mouseup', onSelectionCommitEvent);
-      selectionCommitWindow.addEventListener('touchend', onSelectionCommitEvent);
-      selectionCommitWindow.addEventListener('keyup', onSelectionCommitEvent);
+      selectionCommitWindow.addEventListener('mouseup', onWindowSelectionCommitEvent);
+      selectionCommitWindow.addEventListener('touchend', onWindowSelectionCommitEvent);
+      selectionCommitWindow.addEventListener('keyup', onWindowSelectionCommitEvent);
       view.scrollDOM.addEventListener('scroll', onScroll, { passive: true });
       view.dom.addEventListener('dragover', onCoverDragOver, true);
       view.dom.addEventListener('dragleave', onCoverDragLeave, true);
@@ -923,9 +928,9 @@ export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>
         view.dom.removeEventListener('mouseup', onSelectionCommitEvent);
         view.dom.removeEventListener('touchend', onSelectionCommitEvent);
         view.dom.removeEventListener('keyup', onSelectionCommitEvent);
-        selectionCommitWindow.removeEventListener('mouseup', onSelectionCommitEvent);
-        selectionCommitWindow.removeEventListener('touchend', onSelectionCommitEvent);
-        selectionCommitWindow.removeEventListener('keyup', onSelectionCommitEvent);
+        selectionCommitWindow.removeEventListener('mouseup', onWindowSelectionCommitEvent);
+        selectionCommitWindow.removeEventListener('touchend', onWindowSelectionCommitEvent);
+        selectionCommitWindow.removeEventListener('keyup', onWindowSelectionCommitEvent);
         view.scrollDOM.removeEventListener('scroll', onScroll);
         view.dom.removeEventListener('dragover', onCoverDragOver, true);
         view.dom.removeEventListener('dragleave', onCoverDragLeave, true);
