@@ -20,8 +20,7 @@ import { PreviewRenderer } from './preview/PreviewRenderer';
 import { TabBar } from './preview/TabBar';
 import { FloatingActions } from './preview/FloatingActions';
 import { ChapterRail, ClassicFindBox, LinkDiagnosticsBadge } from './preview/MarkdownChrome';
-import { EditorContextMenu } from './preview/EditorContextMenu';
-import { clearSelection, getSelectionCommitAnchorRect, scheduleCaptureSelection } from '../stores/selection-actions';
+import { clearSelection, getSelectionCommitAnchorRect, isContextMenuButton, scheduleCaptureSelection } from '../stores/selection-actions';
 import type { PreviewItem } from '../types';
 import { isRemoteWorkbenchContentRef, saveRemoteWorkbenchContent } from '../utils/remote-file-preview';
 import { OpenPreviewDocumentWatchBridge } from './app/OpenPreviewDocumentWatchBridge';
@@ -315,6 +314,7 @@ export function PreviewPanel() {
   // DOM 模式选区捕获（非编辑模式下 mouseup 时检测选中文本）
   const handleMouseUp = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (!previewItem || editable) return;
+    if (isContextMenuButton(event.nativeEvent)) return;
     scheduleCaptureSelection(previewItem, undefined, getSelectionCommitAnchorRect(event.nativeEvent));
   }, [previewItem, editable]);
 
@@ -471,10 +471,7 @@ export function PreviewPanel() {
               />
             )}
             {previewOpen && previewItem && editable && previewItem.type === 'markdown' && (
-              <>
-                <LinkDiagnosticsBadge previewItem={previewItem} headings={markdownHeadings} />
-                <EditorContextMenu editorRef={editorRef} containerRef={previewBodyRef} />
-              </>
+              <LinkDiagnosticsBadge previewItem={previewItem} headings={markdownHeadings} />
             )}
             {previewOpen && previewItem && showMarkdownEditorStatus && (
               <div

@@ -1019,6 +1019,58 @@ describe("saveProvider", () => {
     });
   });
 
+  it("replaces local provider plugin models when an explicit model list is saved", () => {
+    writeAddedModels({});
+    const reg = new ProviderRegistry(tmpDir);
+
+    reg.saveProvider("custom-local", {
+      display_name: "Custom Local",
+      auth_type: "api-key",
+      api_key: "sk-local",
+      base_url: "https://local.example/v1",
+      api: "openai-completions",
+      models: [
+        { id: "keep-model", name: "Keep Model", context: 128000, image: true },
+        { id: "drop-model", name: "Drop Model", reasoning: true },
+      ],
+    });
+
+    reg.saveProvider("custom-local", { models: ["keep-model"] });
+
+    expect(readLocalProviderPlugin("custom-local").models).toEqual([
+      { id: "keep-model", name: "Keep Model", context: 128000, image: true },
+    ]);
+
+    const reloaded = new ProviderRegistry(tmpDir);
+    expect(reloaded.getProviderModels("custom-local")).toEqual(["keep-model"]);
+  });
+
+  it("removes local provider plugin models without resurrecting them after reload", () => {
+    writeAddedModels({});
+    const reg = new ProviderRegistry(tmpDir);
+
+    reg.saveProvider("custom-local", {
+      display_name: "Custom Local",
+      auth_type: "api-key",
+      api_key: "sk-local",
+      base_url: "https://local.example/v1",
+      api: "openai-completions",
+      models: [
+        { id: "keep-model", name: "Keep Model", image: true },
+        { id: "drop-model", name: "Drop Model", reasoning: true },
+      ],
+    });
+
+    reg.removeModel("custom-local", "drop-model");
+
+    expect(readLocalProviderPlugin("custom-local").models).toEqual([
+      { id: "keep-model", name: "Keep Model", image: true },
+    ]);
+
+    const reloaded = new ProviderRegistry(tmpDir);
+    expect(reloaded.getProviderModels("custom-local")).toEqual(["keep-model"]);
+  });
+
   it("更新已有 provider 的配置（合并）", () => {
     writeAddedModels({
       "test-provider": {
