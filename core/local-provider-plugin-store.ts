@@ -143,6 +143,23 @@ export function mergeProviderModelEntries(baseModels: any, overlayModels: any) {
   return order.map((id) => byId.get(id)).filter(Boolean);
 }
 
+export function replaceProviderModelEntries(baseModels: any, nextModels: any) {
+  const base = normalizeModels(baseModels);
+  const next = normalizeModels(nextModels);
+  if (base.length === 0) return next;
+  if (next.length === 0) return [];
+
+  const baseById = new Map<string, any>();
+  for (const model of base) {
+    const id = String(modelIdOf(model) || "").trim();
+    if (id) baseById.set(id, model);
+  }
+
+  return next
+    .map((model) => mergeModelEntries(baseById.get(String(modelIdOf(model) || "").trim()), model))
+    .filter(Boolean);
+}
+
 function normalizeCapabilities(config: Record<string, any>) {
   const capabilities = isPlainObject(config.capabilities) ? cloneData(config.capabilities) : {};
   if (isPlainObject(config.media)) {
@@ -214,8 +231,8 @@ export function splitLocalProviderConfig(providerId: string, config: Record<stri
   const raw = isPlainObject(config) ? cloneData(config) : {};
   const existingDefinition: Record<string, any> = existingPlugin ? providerPluginToCatalogDefinition(existingPlugin) : {};
   const definitionFields = pickProviderDefinitionFields(raw);
-  if (hasOwn(existingDefinition, "models") || hasOwn(definitionFields, "models")) {
-    definitionFields.models = mergeProviderModelEntries(existingDefinition.models, definitionFields.models);
+  if (hasOwn(definitionFields, "models")) {
+    definitionFields.models = replaceProviderModelEntries(existingDefinition.models, definitionFields.models);
   }
   const plugin = normalizeLocalProviderPlugin(providerId, {
     ...existingDefinition,
