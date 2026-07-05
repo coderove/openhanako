@@ -1125,6 +1125,15 @@
       "updateCheckBtn": "アップデートを確認",
       "updateNeedInstall": "先に HanaAgent をアプリケーションフォルダに移動してください",
       "updateDiskSpace": "ディスク容量不足のため、アップデートをダウンロードできません",
+      "updateDigestCta": "このアップデートで得られるもの",
+      "updateDigestTitle": "このアップデートで得られるもの",
+      "updateDigestClose": "閉じる",
+      "updateDigestKind": {
+        "feature": "新機能",
+        "fix": "修正",
+        "improvement": "改善",
+        "migration": "移行"
+      },
       "launchAtLogin": "ログイン時に起動",
       "keepAwake": "ロック中も実行を継続",
       "betaUpdates": "ベータ版アップデートを受け取る",

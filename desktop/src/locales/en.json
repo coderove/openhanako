@@ -1263,6 +1263,15 @@
       "updateCheckBtn": "Check for updates",
       "updateNeedInstall": "Please move HanaAgent to the Applications folder first",
       "updateDiskSpace": "Not enough disk space to download update",
+      "updateDigestCta": "What you get in this update",
+      "updateDigestTitle": "What you get in this update",
+      "updateDigestClose": "Close",
+      "updateDigestKind": {
+        "feature": "Feature",
+        "fix": "Fix",
+        "improvement": "Improvement",
+        "migration": "Migration"
+      },
       "launchAtLogin": "Launch at login",
       "keepAwake": "Keep running while locked",
       "betaUpdates": "Receive beta updates",
