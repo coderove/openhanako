@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 
 const DEFAULT_GITHUB_REPOSITORY = "liliMozi/openhanako";
 const DEFAULT_ATOMGIT_OWNER = "liliMozi";
-const DEFAULT_ATOMGIT_REPO = "OpenHanako";
+const DEFAULT_ATOMGIT_REPO = "OpenHanako-Releases";
 const ATOMGIT_API_BASE = "https://api.gitcode.com/api/v5";
 
 export function parseArgs(argv = process.argv.slice(2), env = process.env) {
@@ -19,6 +19,7 @@ export function parseArgs(argv = process.argv.slice(2), env = process.env) {
     atomgitOwner: env.ATOMGIT_OWNER || DEFAULT_ATOMGIT_OWNER,
     atomgitRepo: env.ATOMGIT_REPO || DEFAULT_ATOMGIT_REPO,
     tag: null,
+    selection: "newest",
     latest: 1,
     dryRun: false,
   };
@@ -30,23 +31,34 @@ export function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--atomgit-owner") args.atomgitOwner = argv[++i];
     else if (arg === "--atomgit-repo") args.atomgitRepo = argv[++i];
     else if (arg === "--tag") args.tag = argv[++i];
-    else if (arg === "--latest") args.latest = Number.parseInt(argv[++i], 10);
+    else if (arg === "--newest" || arg === "--latest") {
+      args.selection = "newest";
+      args.latest = Number.parseInt(argv[++i], 10);
+    }
+    else if (arg === "--stable") {
+      args.selection = "stable";
+      args.latest = Number.parseInt(argv[++i], 10);
+    }
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--help" || arg === "-h") args.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
   if (!Number.isInteger(args.latest) || args.latest < 1 || args.latest > 20) {
-    throw new Error("--latest must be an integer between 1 and 20");
+    throw new Error("release selection limit must be an integer between 1 and 20");
   }
 
   return args;
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/mirror-release-to-atomgit.mjs [--tag v0.0.0 | --latest 1] [--dry-run]
+  console.log(`Usage: node scripts/mirror-release-to-atomgit.mjs [--tag v0.0.0 | --newest 1 | --stable 1] [--dry-run]
 
 Copies GitHub release assets to the matching AtomGit/GitCode release.
+Selection:
+  --tag v0.0.0  Mirror one exact tag, including prereleases
+  --newest N    Mirror the newest non-draft GitHub releases, including prereleases
+  --stable N    Mirror the newest non-draft, non-prerelease GitHub releases
 Environment:
   GITHUB_TOKEN   Optional for GitHub API rate limits/private assets
   ATOMGIT_TOKEN  Required unless --dry-run
@@ -112,10 +124,13 @@ export async function selectGithubReleases(options, { env = process.env, fetchIm
     return [release];
   }
 
-  const perPage = Math.min(100, Math.max(5, options.latest * 5));
+  const perPage = options.selection === "stable"
+    ? 100
+    : Math.min(100, Math.max(5, options.latest * 5));
   const releases = await githubJson(`${base}/releases?per_page=${perPage}&page=1`, env, fetchImpl);
   return releases
     .filter(release => !release.draft)
+    .filter(release => options.selection !== "stable" || !release.prerelease)
     .slice(0, options.latest);
 }
 
@@ -127,6 +142,7 @@ export function buildAtomGitReleasePayload(githubRelease) {
     body: githubRelease.body || "",
     draft: false,
     prerelease: Boolean(githubRelease.prerelease),
+    ...(githubRelease.prerelease ? { release_status: "pre" } : {}),
   };
 }
 
@@ -149,7 +165,9 @@ async function upsertAtomGitRelease(options, githubRelease, { env, fetchImpl }) 
     headers: atomgitHeaders(env),
     body: JSON.stringify(payload),
   });
-  return expectJson(response, `AtomGit release ${method} ${githubRelease.tag_name}`);
+  const release = await expectJson(response, `AtomGit release ${method} ${githubRelease.tag_name}`);
+  if (existing?.assets && !release?.assets) return { ...existing, ...release, assets: existing.assets };
+  return release;
 }
 
 export function normalizeUploadUrlPayload(payload) {
@@ -165,7 +183,7 @@ async function getAtomGitUploadTarget(options, tag, asset, { env, fetchImpl }) {
   const response = await fetchImpl(atomgitUrl(
     `/repos/${options.atomgitOwner}/${options.atomgitRepo}/releases/${encodeURIComponent(tag)}/upload_url`,
     env,
-    { file_name: asset.name, file_size: asset.size },
+    { file_name: asset.name },
   ), { headers: atomgitHeaders(env) });
   const payload = await expectJson(response, `AtomGit upload URL ${asset.name}`);
   return normalizeUploadUrlPayload(payload);
@@ -183,17 +201,26 @@ async function downloadGithubAsset(asset, destination, { env, fetchImpl }) {
 }
 
 async function uploadAtomGitAsset(uploadTarget, filePath, asset, fetchImpl) {
-  const stat = await fs.promises.stat(filePath);
-  const response = await fetchImpl(uploadTarget.uploadUrl, {
-    method: "PUT",
-    headers: {
-      ...uploadTarget.headers,
-      "Content-Length": String(stat.size),
-      "Content-Type": asset.content_type || "application/octet-stream",
-    },
-    body: fs.createReadStream(filePath),
-    duplex: "half",
-  });
+  const content = await fs.promises.readFile(filePath);
+  const headers = {
+    "Content-Length": String(content.byteLength),
+    "Content-Type": asset.content_type || "application/octet-stream",
+    ...uploadTarget.headers,
+  };
+  let response;
+  try {
+    response = await fetchImpl(uploadTarget.uploadUrl, {
+      method: "PUT",
+      headers,
+      body: content,
+      signal: AbortSignal.timeout(10 * 60 * 1000),
+    });
+  } catch (error) {
+    const cause = error?.cause ? `: ${error.cause?.message || String(error.cause)}` : "";
+    throw new Error(`AtomGit asset upload failed for ${asset.name}: ${error?.message || String(error)}${cause}`, {
+      cause: error,
+    });
+  }
   if (!response.ok) {
     throw new Error(`AtomGit asset upload failed for ${asset.name}: ${response.status} ${await response.text()}`);
   }
@@ -204,6 +231,50 @@ async function mirrorAsset(options, githubRelease, asset, { env, fetchImpl, temp
   await downloadGithubAsset(asset, filePath, { env, fetchImpl });
   const uploadTarget = await getAtomGitUploadTarget(options, githubRelease.tag_name, asset, { env, fetchImpl });
   await uploadAtomGitAsset(uploadTarget, filePath, asset, fetchImpl);
+}
+
+function buildExistingAttachAssetMap(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const existing = new Map();
+  for (const asset of assets) {
+    if (asset?.type !== "attach" || !asset.name) continue;
+    if (existing.has(asset.name)) {
+      throw new Error(`AtomGit release contains duplicate asset name: ${asset.name}`);
+    }
+    existing.set(asset.name, asset);
+  }
+  return existing;
+}
+
+async function readExistingAtomGitAssetSize(options, tag, assetName, { env, fetchImpl }) {
+  const response = await fetchImpl(atomgitUrl(
+    `/repos/${options.atomgitOwner}/${options.atomgitRepo}/releases/${encodeURIComponent(tag)}/attach_files/${encodeURIComponent(assetName)}/download`,
+    env,
+  ), {
+    method: "HEAD",
+    headers: atomgitHeaders(env),
+    redirect: "follow",
+  });
+  if (!response.ok) {
+    throw new Error(`AtomGit existing asset size check failed for ${assetName}: ${response.status} ${await response.text()}`);
+  }
+  const contentLength = Number.parseInt(response.headers.get("content-length") || "", 10);
+  if (!Number.isFinite(contentLength) || contentLength < 0) {
+    throw new Error(`AtomGit asset ${assetName} already exists, but its size could not be verified; delete it and rerun the mirror`);
+  }
+  return contentLength;
+}
+
+async function shouldSkipExistingAsset(options, githubRelease, asset, { env, fetchImpl, existingAssets }) {
+  if (!existingAssets.has(asset.name)) return false;
+  if (!Number.isFinite(asset.size) || asset.size < 0) {
+    throw new Error(`GitHub asset ${asset.name} does not include a verifiable size`);
+  }
+  const existingSize = await readExistingAtomGitAssetSize(options, githubRelease.tag_name, asset.name, { env, fetchImpl });
+  if (existingSize !== asset.size) {
+    throw new Error(`AtomGit asset ${asset.name} already exists with size ${existingSize}, expected ${asset.size}; delete it and rerun the mirror`);
+  }
+  return true;
 }
 
 export async function mirrorRelease(options, githubRelease, { env = process.env, fetchImpl = fetch } = {}) {
@@ -221,10 +292,15 @@ export async function mirrorRelease(options, githubRelease, { env = process.env,
     };
   }
 
-  await upsertAtomGitRelease(options, githubRelease, { env, fetchImpl });
+  const atomgitRelease = await upsertAtomGitRelease(options, githubRelease, { env, fetchImpl });
+  const existingAssets = buildExistingAttachAssetMap(atomgitRelease);
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `hana-atomgit-${githubRelease.tag_name}-`));
   try {
     for (const asset of githubRelease.assets || []) {
+      if (await shouldSkipExistingAsset(options, githubRelease, asset, { env, fetchImpl, existingAssets })) {
+        console.log(`Skipping ${githubRelease.tag_name}/${asset.name} (already mirrored)`);
+        continue;
+      }
       console.log(`Uploading ${githubRelease.tag_name}/${asset.name}`);
       await mirrorAsset(options, githubRelease, asset, { env, fetchImpl, tempDir });
     }
