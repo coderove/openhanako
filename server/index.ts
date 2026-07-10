@@ -57,6 +57,7 @@ import { createChannelsRoute } from "./routes/channels.ts";
 import { createDmRoute } from "./routes/dm.ts";
 import { createFsRoute } from "./routes/fs.ts";
 import { createPreferencesRoute } from "./routes/preferences.ts";
+import { createInputDraftsRoute } from "./routes/input-drafts.ts";
 import { createSettingsSnapshotRoute } from "./routes/settings-snapshot.ts";
 import { createExperimentsRoute } from "./routes/experiments.ts";
 import { createBridgeRoute } from "./routes/bridge.ts";
@@ -600,7 +601,7 @@ hub.eventBus.handle("utility:call-text", async (payload: any = {}) => {
   const agentId = typeof payload.agentId === "string" && payload.agentId.trim()
     ? payload.agentId.trim()
     : (sessionPath ? engine.resolveSessionOwnership?.(sessionPath)?.agentId || null : null);
-  const utility = engine.resolveUtilityConfig({ agentId, sessionPath });
+  const utility = await engine.resolveUtilityConfigFresh({ agentId, sessionPath });
   const text = await callText({
     api: utility.api,
     apiKey: utility.api_key,
@@ -638,7 +639,7 @@ hub.eventBus.handle("model:sample-text", async (payload: any = {}) => {
   const pluginId = typeof payload.pluginId === "string" && payload.pluginId.trim()
     ? payload.pluginId.trim()
     : null;
-  const utility = engine.resolveUtilityConfig({ agentId, sessionPath });
+  const utility = await engine.resolveUtilityConfigFresh({ agentId, sessionPath });
   const text = await callText({
     api: utility.api,
     apiKey: utility.api_key,
@@ -792,6 +793,7 @@ app.route("/api", createChannelsRoute(engine, hub));
 app.route("/api", createDmRoute(engine, hub));
 app.route("/api", createFsRoute(engine));
 app.route("/api", createPreferencesRoute(engine));
+app.route("/api", createInputDraftsRoute(engine));
 app.route("/api", createSettingsSnapshotRoute(engine, {
   bridgeManagerRef,
   runtimeState: serverRuntimeState,

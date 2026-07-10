@@ -217,6 +217,7 @@ export function AgentCardStack({
 
   const suppressContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
   }, []);
 
   const selectedAgent = selectedId ? agents.find(a => a.id === selectedId) : null;
