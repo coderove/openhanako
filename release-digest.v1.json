@@ -1,51 +1,310 @@
 {
   "schemaVersion": 1,
-  "tag": "v0.374.3",
-  "version": "0.374.3",
-  "previousTag": "v0.374.2",
-  "generatedAt": "2026-07-10T04:24:00.000Z",
+  "tag": "v0.380.7",
+  "version": "0.380.7",
+  "previousTag": "v0.374.3",
+  "generatedAt": "2026-07-10T21:31:12.000Z",
   "noUserFacingChanges": false,
   "summary": {
-    "zh": "修复 ChatGPT Plus/Pro（Codex OAuth）登录：浏览器授权流程可正常启动，不再在打开浏览器前失败。",
-    "en": "Fixes ChatGPT Plus/Pro (Codex OAuth) login so the browser authorization flow starts normally instead of failing before launch."
+    "zh": "跨会话协作初版上线；新增 Grok 订阅登录；本机端口改为随机自愈；升级后会展示更新摘要。同时修复会话压缩被拦截、首条发送残留、设置弹窗宽度与 Grok 对话请求头等问题。",
+    "en": "Cross-session collaboration v0 ships, with Grok subscription login, self-healing random loopback ports, and post-update release notes. Also fixes blocked session compaction, leftover first-message draft text, settings modal width, and Grok chat request headers."
   },
   "counts": {
-    "feature": 0,
-    "fix": 1,
-    "improvement": 0,
-    "migration": 0
+    "feature": 4,
+    "fix": 5,
+    "improvement": 1,
+    "migration": 1
   },
   "source": {
     "owner": "liliMozi",
     "repo": "openhanako",
-    "commitRange": "v0.374.2..521ed1478",
-    "releaseUrl": "https://github.com/liliMozi/openhanako/releases/tag/v0.374.3",
+    "commitRange": "v0.374.3..ec761515f",
+    "releaseUrl": "https://github.com/liliMozi/openhanako/releases/tag/v0.380.7",
     "releaseNotes": ""
   },
   "items": [
     {
-      "id": "codex-oauth-callback-contract",
-      "kind": "fix",
+      "id": "session-collab-v0",
+      "kind": "feature",
       "importance": "high",
       "title": {
-        "zh": "修复 Codex OAuth 登录无法打开浏览器",
-        "en": "Fix Codex OAuth login failing before browser launch"
+        "zh": "跨会话协作初版",
+        "en": "Cross-session collaboration v0"
       },
       "summary": {
-        "zh": "适配新的 OAuth 回调契约后，设置里的 ChatGPT Plus/Pro 登录会正常打开浏览器完成授权；临时登录会话状态也改为组件内管理。",
-        "en": "After adapting to the new OAuth callback contract, ChatGPT Plus/Pro login in Settings opens the browser for authorization as expected; temporary OAuth session state stays component-local."
+        "zh": "助手可在会话间读取、投递与创建草稿；目标会话会显示来源消息卡，发送/创建前有确认草稿卡，确认状态会留在源会话。",
+        "en": "The assistant can read, deliver, and draft across sessions. Target sessions show origin cards; send/create flows use confirmation drafts whose state persists on the source session."
       },
       "details": [
         {
-          "zh": "此前登录会在打开浏览器前失败；现在浏览器授权流程可正常启动。",
-          "en": "Login previously failed before the browser opened; the browser authorization flow now starts normally."
+          "zh": "包含会话工具读侧/写侧、投递单点、草稿 one-shot 存储，以及 auto 模式下的权限分类。",
+          "en": "Includes session tool read/write paths, a single delivery point, one-shot draft storage, and permission classification in auto mode."
+        },
+        {
+          "zh": "草稿卡视觉与字段序已收束：无头化创建卡、助手→标题→首条消息，来源卡固定宽度。",
+          "en": "Draft-card visuals are tightened: headerless create cards, assistant→title→first-message order, and fixed-width origin cards."
         }
       ],
       "sources": [
         {
           "type": "commit",
-          "ref": "521ed1478",
-          "title": "fix(auth): adapt Codex OAuth callback contract"
+          "ref": "010410c7b",
+          "title": "feat(session-collab): 跨 session 协作 v0 收尾"
+        },
+        {
+          "type": "commit",
+          "ref": "f65b440b6",
+          "title": "feat(session-collab): send/create 草稿确认卡"
+        },
+        {
+          "type": "commit",
+          "ref": "40c9c828a",
+          "title": "feat(session-collab): 目标 session 的 Agent 来源消息卡"
+        }
+      ]
+    },
+    {
+      "id": "grok-oauth-login",
+      "kind": "feature",
+      "importance": "high",
+      "title": {
+        "zh": "新增 Grok 订阅登录",
+        "en": "Add Grok subscription OAuth login"
+      },
+      "summary": {
+        "zh": "设置里可用独立的 xAI OAuth（设备码）登录 Grok 订阅；原有 xAI API Key 路径不变。",
+        "en": "Settings now supports a separate xAI OAuth device-code login for Grok subscriptions; existing xAI API-key access is unchanged."
+      },
+      "details": [
+        {
+          "zh": "随后补齐 Grok CLI 代理所需请求头，避免订阅登录后聊天因缺少客户端版本头失败。",
+          "en": "Follow-up adds required Grok CLI proxy headers so subscription chat no longer fails with a missing client-version header."
+        }
+      ],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "2e7486417",
+          "title": "feat(providers): add Grok OAuth subscription login"
+        },
+        {
+          "type": "commit",
+          "ref": "bc2d6c4a0",
+          "title": "fix(providers): send Grok CLI proxy headers for xAI OAuth chat"
+        }
+      ]
+    },
+    {
+      "id": "post-update-announcement",
+      "kind": "feature",
+      "importance": "medium",
+      "title": {
+        "zh": "升级后首启展示更新摘要",
+        "en": "Show release notes on first launch after update"
+      },
+      "summary": {
+        "zh": "版本变化后第一次打开主窗口会弹一次更新完成公告；手动安装升级的用户也能看到「更新了什么」。",
+        "en": "After a version change, the first main-window launch shows a one-time update announcement, including for manual installs."
+      },
+      "details": [
+        {
+          "zh": "全新安装只静默记录版本，不打扰；摘要缺失或版本不匹配时退化为纯版本号文案。",
+          "en": "Fresh installs silently seed the seen version; missing or mismatched digests fall back to a plain version string."
+        }
+      ],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "37c032516",
+          "title": "feat(desktop): 升级后首启公告基建（NoticeDialog + release digest 随包展示）"
+        }
+      ]
+    },
+    {
+      "id": "loopback-port-self-heal",
+      "kind": "migration",
+      "importance": "high",
+      "title": {
+        "zh": "本机端口改为随机分配并自愈",
+        "en": "Loopback port becomes random and self-healing"
+      },
+      "summary": {
+        "zh": "本机 loopback 不再固定 14500：新安装随机选港；仍用 14500 的旧配置会在启动时静默迁到随机端口；端口被占时自动换港继续启动。",
+        "en": "Loopback no longer sticks to 14500: new installs pick a random port, legacy 14500 configs migrate silently, and occupied ports auto-shift so startup can continue."
+      },
+      "details": [
+        {
+          "zh": "LAN / 自定义远程端口仍是对外契约，不会自动改；用环境变量钉死端口时也不迁移。",
+          "en": "LAN and custom-remote ports remain hard contracts and are not auto-changed; an env-pinned port also skips migration."
+        }
+      ],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "d92cb88e0",
+          "title": "feat(server): loopback 端口随机分配与运行期自愈，弃用固定默认 14500"
+        }
+      ]
+    },
+    {
+      "id": "beautify-default-on",
+      "kind": "improvement",
+      "importance": "medium",
+      "title": {
+        "zh": "Beautify 默认开启",
+        "en": "Beautify enabled by default"
+      },
+      "summary": {
+        "zh": "从未改过工具设置的助手，Beautify 从默认关闭改为默认开启；已经手动关掉的不受影响。",
+        "en": "For agents that never changed tool settings, Beautify flips from default-off to default-on; explicit opt-outs stay respected."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "87e6b4f90",
+          "title": "feat(tools): beautify 毕业为默认开启"
+        }
+      ]
+    },
+    {
+      "id": "clear-first-message-draft",
+      "kind": "fix",
+      "importance": "high",
+      "title": {
+        "zh": "修复首条发送后输入框残留正文",
+        "en": "Fix leftover text after sending the first message"
+      },
+      "summary": {
+        "zh": "首页发出第一条消息后，输入框会按消费契约清空，不再留下刚发出去的正文。",
+        "en": "After sending the first home-screen message, the composer clears as expected instead of keeping the sent text."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "848481a69",
+          "title": "fix: 首条发送后输入框残留已发送正文"
+        }
+      ]
+    },
+    {
+      "id": "session-compaction-cache-guard",
+      "kind": "fix",
+      "importance": "high",
+      "title": {
+        "zh": "修复会话压缩被缓存守卫拦截",
+        "en": "Fix session compaction blocked by cache guard"
+      },
+      "summary": {
+        "zh": "手动/自动压缩与分支摘要不再被主会话缓存前缀守卫误拦，压缩可正常完成；普通对话轮次仍保持严格校验。",
+        "en": "Manual/automatic compaction and branch summaries are no longer rejected by the main-session cache-prefix guard; normal chat turns stay strictly checked."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "aa35e6dba",
+          "title": "fix(session): allow Pi native compaction through cache guard"
+        }
+      ]
+    },
+    {
+      "id": "settings-modal-width",
+      "kind": "fix",
+      "importance": "medium",
+      "title": {
+        "zh": "修复设置弹窗被撑宽与定宽回退",
+        "en": "Fix settings modal stretch and restore fixed width"
+      },
+      "summary": {
+        "zh": "供应商等宽页不再把设置弹窗撑破；设置壳恢复 640 定宽，页内过长文案改为省略。",
+        "en": "Wide provider pages no longer stretch the settings modal; the shell returns to a fixed 640 width with in-page ellipsis for overflow."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "7ad066e13",
+          "title": "fix(settings): 防止供应商 wide 页把设置弹窗撑宽"
+        },
+        {
+          "type": "commit",
+          "ref": "bc824204e",
+          "title": "fix(settings): 恢复 640 定宽，撤销 1fr 压短，页内超长省略"
+        }
+      ]
+    },
+    {
+      "id": "markdown-table-shrink",
+      "kind": "fix",
+      "importance": "low",
+      "title": {
+        "zh": "Markdown 表格按内容收缩",
+        "en": "Shrink markdown tables to content"
+      },
+      "summary": {
+        "zh": "预览里的 Markdown 表格会按内容收窄，不再无谓拉满宽度。",
+        "en": "Markdown tables in preview shrink to their content instead of stretching full width."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "1ab65e250",
+          "title": "fix(preview): shrink markdown tables to content"
+        }
+      ]
+    },
+    {
+      "id": "windows-installer-process-cleanup",
+      "kind": "fix",
+      "importance": "medium",
+      "title": {
+        "zh": "修复 Windows 安装清理进程误判",
+        "en": "Fix Windows installer process cleanup false negatives"
+      },
+      "summary": {
+        "zh": "Windows 上进程查询失败时不再当成「没有进程」，会回退到镜像名清理，降低升级残留。",
+        "en": "When Windows process queries fail, the installer no longer treats that as “no process” and falls back to image-name cleanup."
+      },
+      "details": [
+        {
+          "zh": "残留 server 仍存活时会保留 server-info.json，并在端口冲突时快速失败提示。",
+          "en": "If a residual server is still alive, server-info.json is kept and port conflicts fail fast with guidance."
+        }
+      ],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "71aed6bb8",
+          "title": "fix(installer): Windows 进程查询失败不再当作无进程，回退镜像名清理"
+        },
+        {
+          "type": "commit",
+          "ref": "0b085dd00",
+          "title": "fix(desktop): 残留 server 存活时保留 server-info.json 并按端口冲突 fail-fast"
+        }
+      ]
+    },
+    {
+      "id": "confirm-dialog-primitives",
+      "kind": "feature",
+      "importance": "low",
+      "title": {
+        "zh": "通用确认/公告弹窗基建",
+        "en": "Shared confirm and notice dialog primitives"
+      },
+      "summary": {
+        "zh": "补齐 window-surface、带作用域 Overlay 与 ConfirmDialog，后续系统确认与公告弹窗走同一套视觉与焦点契约。",
+        "en": "Adds window-surface, scoped Overlay, and ConfirmDialog so later system confirms and notices share one visual and focus contract."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "a1d6966d3",
+          "title": "feat(ui): 从 infinity 线搬运 window-surface + Overlay(scope) + ConfirmDialog 通用弹窗基建"
         }
       ]
     }
