@@ -119,6 +119,11 @@
     "createIntroOptional": "說明",
     "unpinPluginTab": "取消固定「{label}」"
   },
+  "announcement": {
+    "title": "更新完成 · v{version}",
+    "fallbackBody": "HanaAgent 已更新至 v{version}。",
+    "confirm": "知道了"
+  },
   "skills": {
     "panel": {
       "title": "Skills",
@@ -1196,6 +1201,10 @@
           "office": {
             "label": "Office",
             "summary": "让 Agent 读取文档、转换 HTML 到 PDF"
+          },
+          "session": {
+            "label": "跨會話協作",
+            "summary": "列出/讀取其他會話，經確認卡傳送訊息或建立會話"
           }
         }
       },
@@ -1730,6 +1739,12 @@
       "injectAgentsMdDesc": "開啟後，新會話會讀取目前工作目錄到 Git 根目錄之間的 AGENTS.md。",
       "injectClaudeMd": "注入 CLAUDE.md",
       "injectClaudeMdDesc": "開啟後，新會話會讀取目前工作目錄到 Git 根目錄之間的 CLAUDE.md。",
+      "projectSkillsTitle": "專案技能探索",
+      "projectSkillsDesc": "選擇這個 Agent 在新會話中載入哪些專案技能目錄。",
+      "discoverProjectSkills": "載入專案技能",
+      "discoverProjectSkillsDesc": "探索並載入目前專案 .agents/skills 中的技能。",
+      "discoverCompatibleProjectSkills": "載入其他工具的專案技能",
+      "discoverCompatibleProjectSkillsDesc": "同時探索專案內 Claude Code、Codex 與 OpenClaw 的技能目錄。",
       "agentDeskSection": "Agent 工作台設定"
     },
     "toolCaps": {
@@ -2481,6 +2496,9 @@
     "cwdSkillsHint": "在資料夾下建立 .agents/skills/ 目錄即可",
     "cwdSkillsDesc": "技能跟隨工作台",
     "cwdSkillsDrop": "拖入資料夾或 .zip 安裝技能",
+    "cwdSkillActive": "已載入",
+    "cwdSkillInactive": "未載入",
+    "cwdSkillShadowed": "已被覆蓋",
     "deleteSkill": "刪除技能",
     "openInFinder": "打開資料夾",
     "jianLabel": "箋",
@@ -3309,5 +3327,21 @@
     "fileSummaryMore": "- 还有 {count} 个文件",
     "fileSummaryHeader": "生成文件：",
     "mediaNoDisplayableFiles": "生成结果没有可显示文件"
+  },
+  "sessionCollab": {
+    "messagePrefix": "[來自 Agent「{name}」的訊息，非使用者本人]",
+    "fromAgent": "來自 {name} 的訊息",
+    "expand": "展開",
+    "collapse": "收起",
+    "confirmSend": "傳送",
+    "confirmCreate": "建立並傳送",
+    "ignore": "忽略",
+    "expired": "草稿已過期，請讓 Agent 重新發起",
+    "inFlight": "正在執行中",
+    "halfCreated": "會話已建立（{id}），首則訊息投遞失敗，可重試或打開該會話手動傳送",
+    "createdSession": "已建立會話 {id}",
+    "sendFailed": "傳送失敗：{error}",
+    "rejectFailed": "忽略失敗：{error}",
+    "messageField": "訊息內容"
   }
 }

@@ -69,6 +69,99 @@ async function getDeepseekApiKey(manager) {
 }
 
 describe("ModelManager AuthStorage ownership", () => {
+  it("registers Grok OAuth with Pi and exposes subscription models only when logged in", async () => {
+    writeAddedModels({});
+    writeAuth({
+      "xai-oauth": {
+        type: "oauth",
+        access: "grok-access-secret",
+        refresh: "grok-refresh-secret",
+        expires: Date.now() + 3600_000,
+        tokenEndpoint: "https://auth.x.ai/oauth2/token",
+      },
+    });
+
+    const manager = new ModelManager({ hanakoHome: tmpDir });
+    manager.init();
+    await manager.refreshAvailable();
+
+    expect(manager.authStorage.getOAuthProviders()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "xai-oauth", name: "xAI Grok (OAuth)" }),
+    ]));
+    expect(manager.availableModels.find((model) => (
+      model.provider === "xai-oauth" && model.id === "grok-4.5"
+    ))).toMatchObject({
+      api: "openai-responses",
+      baseUrl: "https://cli-chat-proxy.grok.com/v1",
+      contextWindow: 500_000,
+      maxTokens: 128_000,
+      input: ["text", "image"],
+      reasoning: true,
+    });
+
+    const projectionRaw = fs.readFileSync(path.join(tmpDir, "models.json"), "utf-8");
+    const projection = JSON.parse(projectionRaw);
+    expect(projection.providers["xai-oauth"]).not.toHaveProperty("apiKey");
+    expect(projection.providers["xai-oauth"]).toMatchObject({
+      baseUrl: "https://cli-chat-proxy.grok.com/v1",
+      api: "openai-responses",
+    });
+    expect(projectionRaw).not.toContain("grok-access-secret");
+    expect(projectionRaw).not.toContain("grok-refresh-secret");
+
+    manager.authStorage.logout("xai-oauth");
+    await manager.reloadAndSync();
+    expect(manager.availableModels.filter((model) => model.provider === "xai-oauth")).toEqual([]);
+  });
+
+  it("replaces and removes SDK provider declarations exactly across reloads", async () => {
+    writeAddedModels({});
+    writeAuth({});
+    const oauth = (name) => ({
+      name,
+      login: async () => ({ access: "access", refresh: "refresh", expires: Date.now() + 60_000 }),
+      refreshToken: async (credentials) => credentials,
+      getApiKey: (credentials) => credentials.access,
+    });
+    const plugin = (name, includeOAuth = true) => ({
+      id: "reloadable-sdk-provider",
+      displayName: name,
+      authType: includeOAuth ? "oauth" : "none",
+      defaultBaseUrl: "https://reloadable.example/v1",
+      defaultApi: "openai-responses",
+      sdkProvider: {
+        providerId: "reloadable-sdk-provider",
+        config: {
+          ...(includeOAuth ? { oauth: oauth(name) } : {}),
+        },
+      },
+    });
+
+    const manager = new ModelManager({ hanakoHome: tmpDir });
+    manager.providerRegistry.register(plugin("First OAuth"));
+    manager.init();
+    expect(manager.authStorage.getOAuthProviders()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "reloadable-sdk-provider", name: "First OAuth" }),
+    ]));
+
+    manager.providerRegistry.register(plugin("No OAuth", false));
+    await manager.reloadAndSync();
+    expect(manager.authStorage.getOAuthProviders()
+      .some((provider) => provider.id === "reloadable-sdk-provider")).toBe(false);
+
+    manager.providerRegistry.register(plugin("Second OAuth"));
+    await manager.reloadAndSync();
+    expect(manager.authStorage.getOAuthProviders()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "reloadable-sdk-provider", name: "Second OAuth" }),
+    ]));
+
+    (manager.providerRegistry as unknown as { _plugins: Map<string, unknown> })
+      ._plugins.delete("reloadable-sdk-provider");
+    await manager.reloadAndSync();
+    expect(manager.authStorage.getOAuthProviders()
+      .some((provider) => provider.id === "reloadable-sdk-provider")).toBe(false);
+  });
+
   it("builds the Hana-owned Codex default catalog before ModelRegistry and exposes it only when OAuth is logged in", async () => {
     writeAddedModels({});
     writeAuth({

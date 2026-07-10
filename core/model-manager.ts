@@ -9,7 +9,12 @@
  * 都在这个数组上完成，不再经过中间层。
  */
 import path from "path";
-import { AuthStorage, createModelRegistry } from "../lib/pi-sdk/index.ts";
+import {
+  AuthStorage,
+  createModelRegistry,
+  registerModelProvider,
+  unregisterModelProvider,
+} from "../lib/pi-sdk/index.ts";
 import { t } from "../lib/i18n.ts";
 import { ProviderRegistry } from "./provider-registry.ts";
 import { ExecutionRouter } from "./execution-router.ts";
@@ -120,6 +125,7 @@ export class ModelManager {
   declare _defaultModel: any;
   declare _hanakoHome: any;
   declare _modelRegistry: any;
+  declare _registeredSdkProviderIds: Set<string>;
   declare executionRouter: any;
   declare providerRegistry: any;
   /**
@@ -130,6 +136,7 @@ export class ModelManager {
     this._hanakoHome = hanakoHome;
     this._authStorage = null;
     this._modelRegistry = null;
+    this._registeredSdkProviderIds = new Set();
     this._defaultModel = null;   // 设置页面选的，持久化，bridge 用这个
     this._availableModels = [];
 
@@ -153,6 +160,7 @@ export class ModelManager {
       this._authStorage,
       path.join(this._hanakoHome, "models.json"),
     );
+    this._syncSdkProviderRegistrations();
 
     this.executionRouter = new ExecutionRouter(
       (ref) => this._resolveFromAvailable(ref),
@@ -257,6 +265,42 @@ export class ModelManager {
     await this.refreshAvailable();
     this._rebindDefaultModel();
     return changed;
+  }
+
+  /**
+   * Reconcile ProviderRegistry-owned dynamic SDK declarations with this
+   * ModelRegistry instance. The set belongs to ModelManager because dynamic
+   * registration is lifecycle state of this concrete SDK registry.
+   */
+  _syncSdkProviderRegistrations() {
+    if (!this._modelRegistry) return;
+    const registrations = this.providerRegistry.getSdkProviderRegistrations();
+    const nextIds = new Set<string>(registrations.map((registration) => registration.providerId));
+    // ModelRegistry.registerProvider is an upsert: omitted fields survive from
+    // the prior config. Remove every previously owned declaration first so a
+    // catalog/plugin reload has exact replacement semantics, including deleted
+    // oauth, headers, or hooks.
+    for (const providerId of this._registeredSdkProviderIds) {
+      unregisterModelProvider(this._modelRegistry, providerId);
+    }
+    const appliedIds: string[] = [];
+    try {
+      for (const registration of registrations) {
+        registerModelProvider(
+          this._modelRegistry,
+          registration.providerId,
+          registration.config,
+        );
+        appliedIds.push(registration.providerId);
+      }
+    } catch (error) {
+      for (const providerId of appliedIds) {
+        unregisterModelProvider(this._modelRegistry, providerId);
+      }
+      this._registeredSdkProviderIds = new Set();
+      throw error;
+    }
+    this._registeredSdkProviderIds = nextIds;
   }
 
   _buildChatProjectionInputs() {
@@ -570,6 +614,7 @@ export class ModelManager {
    */
   async reloadAndSync() {
     this.providerRegistry.reload();
+    this._syncSdkProviderRegistrations();
     await this.syncAndRefresh();
   }
 

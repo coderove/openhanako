@@ -26,6 +26,7 @@ const initialStateFactory = (): MockState => ({
   sessionLocatorsById: {} as Record<string, { path: string | null }>,
   pendingSessionSwitchPath: null,
   pendingNewSession: false,
+  pendingDraftId: null,
   pendingProjectId: null,
   pendingNewSessionThinkingLevel: null,
   pendingNewSessionPermissionMode: null,
@@ -687,6 +688,8 @@ function mockPermissionDefault(mode = 'ask') {
     it('sends extra workspace folders when creating a pending session', async () => {
       Object.assign(mockState, {
         pendingNewSession: true,
+        pendingDraftId: 'draft-workspace-a',
+        currentAgentId: 'hana',
         memoryEnabled: true,
         selectedFolder: '/workspace-a',
         workspaceFolders: ['/reference-a'],
@@ -694,19 +697,28 @@ function mockPermissionDefault(mode = 'ask') {
       mockFetch.mockResolvedValueOnce(jsonResponse({
         ok: true,
         path: '/session/new.jsonl',
+        sessionId: 'sess_workspace_a',
+        agentId: 'hana',
         cwd: '/workspace-a',
         workspaceFolders: ['/reference-a'],
       }));
-      mockFetch.mockResolvedValueOnce(jsonResponse([]));
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        sessionId: 'sess_workspace_a',
+        agentId: 'hana',
+        cwd: '/workspace-a',
+        workspaceFolders: ['/reference-a'],
+      }));
 
-      await expect(ensureSession()).resolves.toBe(true);
+      await expect(ensureSession()).resolves.toMatchObject({ sessionId: 'sess_workspace_a', sessionPath: '/session/new.jsonl' });
 
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
-        '/api/sessions/new',
+        '/api/sessions/new-detached',
         expect.objectContaining({
           body: JSON.stringify({
             memoryEnabled: true,
+            recordWorkspaceHistory: true,
             cwd: '/workspace-a',
             workspaceFolders: ['/reference-a'],
             currentSessionPath: null,
@@ -717,6 +729,61 @@ function mockPermissionDefault(mode = 'ask') {
       // 首页草稿在 session 创建成功时被消费（HOME_DRAFT_KEY 契约）
       expect((mockState as unknown as { clearDraft: ReturnType<typeof vi.fn> }).clearDraft)
         .toHaveBeenCalledWith('__home__');
+    });
+
+    it('consumes home draft on activation without copying text into the new session draft', async () => {
+      const homeDoc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '晚上好啊' }] }] };
+      Object.assign(mockState, {
+        pendingNewSession: true,
+        pendingDraftId: 'draft-home-consume',
+        currentAgentId: 'hana',
+        memoryEnabled: true,
+        selectedFolder: '/workspace-home',
+        drafts: { __home__: '晚上好啊' },
+        draftDocs: { __home__: homeDoc },
+        attachedFiles: [{
+          fileId: 'sf_home',
+          path: '/tmp/hana/session-files/home.png',
+          name: 'home.png',
+          isDirectory: false,
+        }],
+      });
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        path: '/session/home-consume.jsonl',
+        sessionId: 'sess_home_consume',
+        agentId: 'hana',
+        cwd: '/workspace-home',
+        workspaceFolders: [],
+      }));
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        sessionId: 'sess_home_consume',
+        agentId: 'hana',
+        cwd: '/workspace-home',
+        workspaceFolders: [],
+      }));
+
+      await expect(ensureSession()).resolves.toMatchObject({
+        sessionId: 'sess_home_consume',
+        sessionPath: '/session/home-consume.jsonl',
+      });
+
+      expect((mockState as unknown as { clearDraft: ReturnType<typeof vi.fn> }).clearDraft)
+        .toHaveBeenCalledWith('__home__');
+      const drafts = mockState.drafts as Record<string, string>;
+      const draftDocs = mockState.draftDocs as Record<string, unknown>;
+      expect(drafts.sess_home_consume).toBeUndefined();
+      expect(drafts['/session/home-consume.jsonl']).toBeUndefined();
+      expect(draftDocs.sess_home_consume).toBeUndefined();
+      expect(draftDocs['/session/home-consume.jsonl']).toBeUndefined();
+      expect((mockState.attachedFilesBySession as Record<string, unknown[]>).sess_home_consume)
+        .toEqual([{
+          fileId: 'sf_home',
+          path: '/tmp/hana/session-files/home.png',
+          name: 'home.png',
+          isDirectory: false,
+        }]);
     });
 
     it('enters a pending draft without posting a new-session request', async () => {
@@ -734,12 +801,14 @@ function mockPermissionDefault(mode = 'ask') {
 
       expect(mockState.pendingNewSession).toBe(true);
       expect(mockState.currentSessionPath).toBeNull();
-      expect(mockFetch.mock.calls.some(([url]) => url === '/api/sessions/new')).toBe(false);
+      expect(mockFetch.mock.calls.some(([url]) => url === '/api/sessions/new-detached')).toBe(false);
     });
 
     it('posts one new-session request at send time using the current pending draft', async () => {
       Object.assign(mockState, {
         pendingNewSession: true,
+        pendingDraftId: 'draft-workspace-b',
+        currentAgentId: 'hana',
         memoryEnabled: true,
         selectedFolder: '/workspace-b',
         serverPort: '62950',
@@ -747,38 +816,77 @@ function mockPermissionDefault(mode = 'ask') {
 
       const createBodies: unknown[] = [];
       mockFetch.mockImplementation(async (url: string, opts?: RequestInit) => {
-        if (url === '/api/sessions/new') {
+        if (url === '/api/sessions/new-detached') {
           createBodies.push(JSON.parse(String(opts?.body)));
           return jsonResponse({
             ok: true,
             path: '/session/fresh.jsonl',
             sessionId: 'sess_fresh',
+            agentId: 'hana',
             cwd: '/workspace-b',
             workspaceFolders: [],
           });
         }
-        if (url === '/api/sessions') {
-          return jsonResponse([]);
+        if (url === '/api/sessions/switch') {
+          return jsonResponse({ ok: true, sessionId: 'sess_fresh', agentId: 'hana', workspaceFolders: [] });
         }
         throw new Error(`unexpected fetch: ${url}`);
       });
 
-      await expect(ensureSession()).resolves.toBe(true);
+      await expect(ensureSession()).resolves.toMatchObject({ sessionId: 'sess_fresh', sessionPath: '/session/fresh.jsonl' });
 
       expect(createBodies).toEqual([{
         memoryEnabled: true,
+        recordWorkspaceHistory: true,
         cwd: '/workspace-b',
         currentSessionPath: null,
       }]);
-      expect(mockFetch.mock.calls.filter(([url]) => url === '/api/sessions/new')).toHaveLength(1);
+      expect(mockFetch.mock.calls.filter(([url]) => url === '/api/sessions/new-detached')).toHaveLength(1);
       expect(mockState.currentSessionPath).toBe('/session/fresh.jsonl');
       expect(mockState.currentSessionId).toBe('sess_fresh');
       expect((mockState.chatSessions as Record<string, unknown>)['/session/fresh.jsonl']).toBeTruthy();
     });
 
+    it('does not let a late detached create response activate a replacement pending draft (#2078 ABA)', async () => {
+      Object.assign(mockState, {
+        pendingNewSession: true,
+        pendingDraftId: 'draft-a',
+        currentAgentId: 'hana',
+        memoryEnabled: true,
+        selectedFolder: '/workspace-a',
+      });
+      let resolveCreate!: (response: Response) => void;
+      mockFetch.mockImplementation((url: string) => {
+        if (url !== '/api/sessions/new-detached') throw new Error(`unexpected fetch: ${url}`);
+        return new Promise<Response>((resolve) => { resolveCreate = resolve; });
+      });
+
+      const creating = ensureSession('draft-a');
+      Object.assign(mockState, {
+        pendingNewSession: true,
+        pendingDraftId: 'draft-b',
+        selectedFolder: '/workspace-b',
+      });
+      resolveCreate(jsonResponse({
+        ok: true,
+        path: '/session/a.jsonl',
+        sessionId: 'sess_a',
+        agentId: 'hana',
+      }));
+
+      const ref = await creating;
+      expect(ref).toEqual({ sessionId: 'sess_a', sessionPath: '/session/a.jsonl', agentId: 'hana' });
+      expect(Object.isFrozen(ref)).toBe(true);
+      expect(mockState.pendingDraftId).toBe('draft-b');
+      expect(mockState.currentSessionPath).toBeNull();
+      expect(mockFetch.mock.calls.some(([url]) => url === '/api/sessions/switch')).toBe(false);
+    });
+
     it('sends workspaceMountId instead of cwd when the pending session selects a Studio workspace', async () => {
       Object.assign(mockState, {
         pendingNewSession: true,
+        pendingDraftId: 'draft-mount',
+        currentAgentId: 'hana',
         memoryEnabled: true,
         selectedFolder: null,
         selectedWorkspaceMountId: 'mount_docs',
@@ -787,21 +895,32 @@ function mockPermissionDefault(mode = 'ask') {
       mockFetch.mockResolvedValueOnce(jsonResponse({
         ok: true,
         path: '/session/new.jsonl',
+        sessionId: 'sess_mount',
+        agentId: 'hana',
         cwd: '/server/docs',
         workspaceMountId: 'mount_docs',
         workspaceLabel: 'Docs',
         workspaceFolders: [],
       }));
-      mockFetch.mockResolvedValueOnce(jsonResponse([]));
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        sessionId: 'sess_mount',
+        agentId: 'hana',
+        cwd: '/server/docs',
+        workspaceMountId: 'mount_docs',
+        workspaceLabel: 'Docs',
+        workspaceFolders: [],
+      }));
 
-      await expect(ensureSession()).resolves.toBe(true);
+      await expect(ensureSession()).resolves.toMatchObject({ sessionId: 'sess_mount' });
 
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
-        '/api/sessions/new',
+        '/api/sessions/new-detached',
         expect.objectContaining({
           body: JSON.stringify({
             memoryEnabled: true,
+            recordWorkspaceHistory: true,
             workspaceMountId: 'mount_docs',
             currentSessionPath: null,
           }),
@@ -817,6 +936,8 @@ function mockPermissionDefault(mode = 'ask') {
     it('carries the pending new-session thinking draft into session creation', async () => {
       Object.assign(mockState, {
         pendingNewSession: true,
+        pendingDraftId: 'draft-thinking',
+        currentAgentId: 'hana',
         memoryEnabled: true,
         selectedFolder: '/workspace-a',
         pendingNewSessionThinkingLevel: 'high',
@@ -824,20 +945,30 @@ function mockPermissionDefault(mode = 'ask') {
       mockFetch.mockResolvedValueOnce(jsonResponse({
         ok: true,
         path: '/session/new.jsonl',
+        sessionId: 'sess_thinking',
+        agentId: 'hana',
         cwd: '/workspace-a',
         workspaceFolders: [],
         thinkingLevel: 'high',
       }));
-      mockFetch.mockResolvedValueOnce(jsonResponse([]));
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        sessionId: 'sess_thinking',
+        agentId: 'hana',
+        cwd: '/workspace-a',
+        workspaceFolders: [],
+        thinkingLevel: 'high',
+      }));
 
-      await expect(ensureSession()).resolves.toBe(true);
+      await expect(ensureSession()).resolves.toMatchObject({ sessionId: 'sess_thinking' });
 
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
-        '/api/sessions/new',
+        '/api/sessions/new-detached',
         expect.objectContaining({
           body: JSON.stringify({
             memoryEnabled: true,
+            recordWorkspaceHistory: true,
             cwd: '/workspace-a',
             thinkingLevel: 'high',
             currentSessionPath: null,
@@ -851,6 +982,8 @@ function mockPermissionDefault(mode = 'ask') {
     it('carries the pending new-session permission draft into session creation', async () => {
       Object.assign(mockState, {
         pendingNewSession: true,
+        pendingDraftId: 'draft-permission',
+        currentAgentId: 'hana',
         memoryEnabled: true,
         selectedFolder: '/workspace-a',
         pendingNewSessionPermissionMode: 'auto',
@@ -858,20 +991,30 @@ function mockPermissionDefault(mode = 'ask') {
       mockFetch.mockResolvedValueOnce(jsonResponse({
         ok: true,
         path: '/session/new.jsonl',
+        sessionId: 'sess_permission',
+        agentId: 'hana',
         cwd: '/workspace-a',
         workspaceFolders: [],
         permissionMode: 'auto',
       }));
-      mockFetch.mockResolvedValueOnce(jsonResponse([]));
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        sessionId: 'sess_permission',
+        agentId: 'hana',
+        cwd: '/workspace-a',
+        workspaceFolders: [],
+        permissionMode: 'auto',
+      }));
 
-      await expect(ensureSession()).resolves.toBe(true);
+      await expect(ensureSession()).resolves.toMatchObject({ sessionId: 'sess_permission' });
 
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
-        '/api/sessions/new',
+        '/api/sessions/new-detached',
         expect.objectContaining({
           body: JSON.stringify({
             memoryEnabled: true,
+            recordWorkspaceHistory: true,
             cwd: '/workspace-a',
             permissionMode: 'auto',
             currentSessionPath: null,
@@ -889,19 +1032,22 @@ function mockPermissionDefault(mode = 'ask') {
       mockFetch.mockResolvedValueOnce(jsonResponse({
         ok: true,
         path: '/session/new.jsonl',
+        sessionId: 'sess_project',
+        agentId: 'hana',
         cwd: '/workspace/project-hana',
         projectId: 'project-hana',
         workspaceFolders: [],
       }));
       mockFetch.mockResolvedValueOnce(jsonResponse([]));
 
-      await expect(ensureSession()).resolves.toBe(true);
+      await expect(ensureSession()).resolves.toMatchObject({ sessionId: 'sess_project' });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/sessions/new',
+        '/api/sessions/new-detached',
         expect.objectContaining({
           body: JSON.stringify({
             memoryEnabled: true,
+            recordWorkspaceHistory: true,
             cwd: '/workspace/project-hana',
             projectId: 'project-hana',
             permissionMode: 'ask',
@@ -917,11 +1063,12 @@ function mockPermissionDefault(mode = 'ask') {
         key === 'session.createFailed' ? 'Create session failed' : key;
       Object.assign(mockState, {
         pendingNewSession: true,
+        pendingDraftId: 'draft-error',
         memoryEnabled: true,
       });
       mockFetch.mockResolvedValueOnce(jsonResponse({ error: 'session skill snapshot failed' }, false));
 
-      await expect(ensureSession()).resolves.toBe(false);
+      await expect(ensureSession()).resolves.toBeNull();
 
       expect(mockState.inlineErrors).toMatchObject({
         '': 'Create session failed: session skill snapshot failed',

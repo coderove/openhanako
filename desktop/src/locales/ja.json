@@ -119,6 +119,11 @@
     "createIntroOptional": "説明",
     "unpinPluginTab": "「{label}」の固定を解除"
   },
+  "announcement": {
+    "title": "アップデート完了 · v{version}",
+    "fallbackBody": "HanaAgent は v{version} に更新されました。",
+    "confirm": "OK"
+  },
   "skills": {
     "panel": {
       "title": "Skills",
@@ -1196,6 +1201,10 @@
           "office": {
             "label": "Office",
             "summary": "Agent にドキュメントの読み取りと HTML から PDF への変換を許可"
+          },
+          "session": {
+            "label": "セッション連携",
+            "summary": "他のセッションを一覧・閲覧し、確認カード経由でメッセージ送信やセッション作成を行う"
           }
         }
       },
@@ -1730,6 +1739,12 @@
       "injectAgentsMdDesc": "オンにすると、新規セッションは現在の作業ディレクトリから Git ルートまでの AGENTS.md を読み込みます。",
       "injectClaudeMd": "CLAUDE.md を注入",
       "injectClaudeMdDesc": "オンにすると、新規セッションは現在の作業ディレクトリから Git ルートまでの CLAUDE.md を読み込みます。",
+      "projectSkillsTitle": "プロジェクトスキルの検出",
+      "projectSkillsDesc": "この Agent が新しいセッションに読み込むプロジェクトスキルのディレクトリを選択します。",
+      "discoverProjectSkills": "プロジェクトスキルを読み込む",
+      "discoverProjectSkillsDesc": "現在のプロジェクトの .agents/skills からスキルを検出して読み込みます。",
+      "discoverCompatibleProjectSkills": "他ツールのプロジェクトスキルを読み込む",
+      "discoverCompatibleProjectSkillsDesc": "Claude Code、Codex、OpenClaw のプロジェクトスキルも検出します。",
       "agentDeskSection": "Agent デスク設定"
     },
     "toolCaps": {
@@ -2481,6 +2496,9 @@
     "cwdSkillsHint": ".agents/skills/ ディレクトリを作成して始めましょう",
     "cwdSkillsDesc": "スキルはワークスペースに連動します",
     "cwdSkillsDrop": "フォルダまたは .zip をドロップしてスキルをインストール",
+    "cwdSkillActive": "読み込み済み",
+    "cwdSkillInactive": "未読み込み",
+    "cwdSkillShadowed": "優先元により無効",
     "deleteSkill": "スキルを削除",
     "openInFinder": "フォルダを開く",
     "jianLabel": "Jian",
@@ -3309,5 +3327,21 @@
     "fileSummaryMore": "- 他 {count} 件のファイル",
     "fileSummaryHeader": "生成されたファイル:",
     "mediaNoDisplayableFiles": "生成結果に表示可能なファイルがありません"
+  },
+  "sessionCollab": {
+    "messagePrefix": "[エージェント「{name}」からのメッセージです。ユーザー本人ではありません]",
+    "fromAgent": "{name} からのメッセージ",
+    "expand": "展開",
+    "collapse": "折りたたむ",
+    "confirmSend": "送信",
+    "confirmCreate": "作成して送信",
+    "ignore": "無視",
+    "expired": "下書きの期限が切れました。エージェントに再作成させてください",
+    "inFlight": "実行中です",
+    "halfCreated": "セッションは作成されました（{id}）が、最初のメッセージの送信に失敗しました。再試行するか、セッションを開いて手動で送信してください",
+    "createdSession": "セッションを作成しました {id}",
+    "sendFailed": "送信に失敗しました：{error}",
+    "rejectFailed": "無視に失敗しました：{error}",
+    "messageField": "メッセージ内容"
   }
 }

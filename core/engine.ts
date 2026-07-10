@@ -26,7 +26,11 @@ import { ResourceAccessService } from "./resource-access-service.ts";
 import { ResourceService } from "./resource-service.ts";
 import { appendSecurityAuditEvent } from "./security-audit-log.ts";
 import { findModel } from "../shared/model-ref.ts";
-import { resolveWorkspaceSkillPaths } from "../shared/workspace-skill-paths.ts";
+import {
+  resolveWorkspaceSkillCatalogPaths,
+  resolveWorkspaceSkillPaths,
+  workspaceSkillPolicyFromConfig,
+} from "../shared/workspace-skill-paths.ts";
 import { resolveHanaPiAgentDir, resolveHanaPiProjectDir } from "../shared/hana-runtime-paths.ts";
 import { PluginManager } from "./plugin-manager.ts";
 import { EnvChangeLedger } from "./env-change-ledger.ts";
@@ -155,6 +159,7 @@ import {
 import { SessionFileRegistry } from "../lib/session-files/session-file-registry.ts";
 import { serializeSessionFile } from "../lib/session-files/session-file-response.ts";
 import { AutomationSuggestionStore } from "../lib/tools/automation-suggestion-store.ts";
+import { SessionCollabDraftStore } from "../lib/session-collab/draft-store.ts";
 import { NotificationService } from "../lib/notifications/notification-service.ts";
 import { SpeechRecognitionService } from "./speech-recognition-service.ts";
 import { UniversalMediaManager } from "./media/universal-media-manager.ts";
@@ -170,6 +175,7 @@ import {
   normalizeSessionProjectId,
   UNCATEGORIZED_PROJECT_ID,
 } from "../shared/session-projects.ts";
+import { assertValidAgentId, isValidAgentId } from "../shared/agent-id.ts";
 
 const moduleLog = createModuleLogger("engine");
 const toolAvailabilityLog = createModuleLogger("tool-availability");
@@ -189,6 +195,7 @@ export class HanaEngine {
   declare _agentMgr: any;
   declare _approvalGateway: any;
   declare _automationSuggestionStore: any;
+  declare _sessionCollabDraftStore: any;
   declare _bridge: any;
   declare _channels: any;
   declare _checkpointStore: any;
@@ -300,6 +307,7 @@ export class HanaEngine {
     this._currentTurnNativeMedia = createCurrentTurnNativeMediaStore();
     this._pluginInstallRecords = new PluginInstallRecords({ hanakoHome });
     this._automationSuggestionStore = new AutomationSuggestionStore();
+    this._sessionCollabDraftStore = new SessionCollabDraftStore();
     this._approvalGateway = createApprovalGateway({
       smallToolModelReviewer: createModelApprovalReviewer({
         role: "utility",
@@ -339,7 +347,29 @@ export class HanaEngine {
     this._sessionProjects = new SessionProjectCatalogStore({ userDir: this.userDir });
 
     // 确定启动时焦点 agent
-    const startId = agentId || this._prefs.getPrimaryAgent() || this._prefs.findFirstAgent();
+    let startId;
+    if (agentId !== undefined && agentId !== null) {
+      // Explicit constructor input is an external contract: reject it rather
+      // than silently switching the caller to another identity.
+      assertValidAgentId(agentId);
+      startId = agentId;
+    } else {
+      const primaryAgentId = this._prefs.getPrimaryAgent();
+      const primaryConfig = isValidAgentId(primaryAgentId)
+        ? path.join(this.agentsDir, primaryAgentId, "config.yaml")
+        : null;
+      if (primaryConfig && fs.existsSync(primaryConfig)) {
+        startId = primaryAgentId;
+      } else {
+        if (primaryAgentId) {
+          moduleLog.warn(
+            `ignoring unavailable primary agent ID ${JSON.stringify(primaryAgentId)}; `
+            + "the saved preference was preserved",
+          );
+        }
+        startId = this._prefs.findFirstAgent();
+      }
+    }
     if (!startId) throw new Error(t("error.noAgentsFound"));
 
     // ── Channel Manager ──
@@ -404,8 +434,18 @@ export class HanaEngine {
       closeTerminalsForSession: (sessionPath) => this._terminalSessions.closeForSession(sessionPath),
       closeAllTerminals: () => this._terminalSessions.closeAll(),
       onSessionRuntimeDiscarded: (sessionPath, reason) => this.clearSessionRuntimeState(sessionPath, reason),
-      onBeforeSessionCreate: async (cwd) => {
-        await this.syncWorkspaceSkillPaths(cwd, { reload: true, emitEvent: false });
+      onBeforeSessionCreate: async (cwd, { agent = null, agentId = null } = {}) => {
+        const targetAgent = agent || (agentId ? this._agentMgr.getAgent(agentId) : null) || this.agent;
+        await this.syncWorkspaceSkillPaths(cwd, {
+          reload: true,
+          emitEvent: false,
+          agent: targetAgent,
+          agentId: targetAgent?.id || agentId || null,
+        });
+        return {
+          workspacePaths: this._getWorkspaceExternalSkillPaths(cwd),
+          policy: workspaceSkillPolicyFromConfig(targetAgent?.config?.workspace_context),
+        };
       },
       envChangeLedger: this._envChangeLedger,
     });
@@ -577,6 +617,7 @@ export class HanaEngine {
   get confirmStore() { return this._confirmStore; }
   get automationSuggestionStore() { return this._automationSuggestionStore; }
   getAutomationSuggestionStore() { return this._automationSuggestionStore; }
+  get sessionCollabDraftStore() { return this._sessionCollabDraftStore; }
   get approvalGateway() { return this._approvalGateway; }
   getStudioCronStore() { return this._studioCronService; }
 
@@ -1635,7 +1676,7 @@ export class HanaEngine {
     if (!ag) throw new Error(`agent not found: ${agentId}`);
     return this._skills.getRuntimeSkillInfos(ag);
   }
-  _getSkillsForAgent(ag) { return this._skills.getSkillsForAgent(ag); }
+  _getSkillsForAgent(ag, options = {}) { return this._skills.getSkillsForAgent(ag, options); }
   get skillsDir() { return this._skills?.skillsDir; }
   get userSkillsDir() { return this._skills?.skillsDir; }
   get modelsJsonPath() { return this._models.modelsJsonPath; }
@@ -1705,7 +1746,25 @@ export class HanaEngine {
   }
 
   _getWorkspaceExternalSkillPaths(cwd) {
-    return resolveWorkspaceSkillPaths(cwd);
+    return resolveWorkspaceSkillCatalogPaths(cwd);
+  }
+
+  getWorkspaceSkillPolicy(agentOrId = null) {
+    const agent = typeof agentOrId === "string"
+      ? this._agentMgr.getAgent(agentOrId)
+      : (agentOrId || this.agent);
+    return workspaceSkillPolicyFromConfig(agent?.config?.workspace_context);
+  }
+
+  getActiveWorkspaceSkillPaths(cwd, agentOrId = null) {
+    return resolveWorkspaceSkillPaths(cwd, this.getWorkspaceSkillPolicy(agentOrId));
+  }
+
+  syncAgentWorkspaceSkills(agentId) {
+    const agent = this._agentMgr.getAgent(agentId);
+    if (!agent || !this._skills) return false;
+    this._skills.syncAgentSkills(agent);
+    return true;
   }
 
   _getResolvedExternalSkillPaths(cwd) {
@@ -1723,7 +1782,8 @@ export class HanaEngine {
       const other = b[index];
       return entry?.dirPath === other?.dirPath
         && entry?.label === other?.label
-        && (entry?.scope || "") === (other?.scope || "");
+        && (entry?.scope || "") === (other?.scope || "")
+        && (entry?.category || "") === (other?.category || "");
     });
   }
 

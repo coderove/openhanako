@@ -279,6 +279,26 @@ function omitUndefined(value) {
   return result;
 }
 
+function assertAllowedOAuthHttpBaseUrl(providerId, baseUrl, runtime) {
+  if (runtime?.kind !== "oauth-http") return;
+  let baseUrlOrigin;
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+      throw new Error("not a safe HTTPS URL");
+    }
+    baseUrlOrigin = parsed.origin;
+  } catch {
+    throw new Error(`OAuth HTTP provider "${providerId}" requires a valid HTTPS baseUrl`);
+  }
+  if (!runtime.allowedBaseUrlOrigins.includes(baseUrlOrigin)) {
+    throw new Error(
+      `OAuth HTTP provider "${providerId}" rejects baseUrl origin "${baseUrlOrigin}"; ` +
+      `allowed origins: ${runtime.allowedBaseUrlOrigins.join(", ")}`,
+    );
+  }
+}
+
 function mergeModelMetadata(base, patch) {
   const merged = { ...base, ...patch };
   if (patch.compat) {
@@ -364,6 +384,7 @@ import { fireworksPlugin } from "../lib/providers/fireworks.ts";
 import { mistralPlugin } from "../lib/providers/mistral.ts";
 import { perplexityPlugin } from "../lib/providers/perplexity.ts";
 import { xaiPlugin } from "../lib/providers/xai.ts";
+import { xaiOAuthPlugin } from "../lib/providers/xai-oauth.ts";
 // Coding Plan
 import { dashscopeCodingPlugin } from "../lib/providers/dashscope-coding.ts";
 import { kimiCodingPlugin } from "../lib/providers/kimi-coding.ts";
@@ -405,6 +426,7 @@ const BUILTIN_PLUGINS = [
   mistralPlugin,
   perplexityPlugin,
   xaiPlugin,
+  xaiOAuthPlugin,
   // Coding Plan
   dashscopeCodingPlugin,
   kimiCodingPlugin,
@@ -425,6 +447,7 @@ const BUILTIN_PLUGINS = [
  * @property {Array<string|object>} [models] - 固定 chat 模型列表（本地 Provider Plugin 可直接声明）
  * @property {object} [capabilities]
  * @property {object} [runtime]
+ * @property {{providerId: string, config: import('../lib/pi-sdk/index.ts').SdkProviderRegistrationConfig}} [sdkProvider]
  * @property {object} [source]
  */
 
@@ -512,7 +535,8 @@ export class ProviderRegistry {
 
   _writeLocalProviderPlugin(providerId, config, existingPlugin = null) {
     const { plugin, overlay } = splitLocalProviderConfig(providerId, config, existingPlugin);
-    validateProviderRuntime(plugin.runtime);
+    const runtime = validateProviderRuntime(plugin.runtime);
+    assertAllowedOAuthHttpBaseUrl(providerId, plugin.defaultBaseUrl, runtime);
     validateProviderModels(providerId, plugin.models, { baseUrl: plugin.defaultBaseUrl });
     const saved = this._localProviderPlugins.writeProvider(providerId, plugin);
     this._plugins.set(providerId, saved);
@@ -707,8 +731,61 @@ export class ProviderRegistry {
       source: normalizeProviderSource(plugin, isBuiltin),
       ...(runtime ? { runtime } : {}),
     };
+    assertAllowedOAuthHttpBaseUrl(entry.id, entry.baseUrl, runtime);
     entry.capabilities = normalizeCapabilities(plugin, entry);
     return entry;
+  }
+
+  /**
+   * Return dynamic SDK provider registrations after catalog overrides have
+   * been merged. OAuth functions remain in the plugin declaration; credentials
+   * stay exclusively in AuthStorage.
+   */
+  getSdkProviderRegistrations() {
+    if (this._entries.size === 0) this.reload();
+    const registrations = [];
+    const owners = new Map();
+    for (const [sourceProviderId, plugin] of this._plugins) {
+      if (!plugin?.sdkProvider) continue;
+      const entry = this._entries.get(sourceProviderId);
+      if (!entry) continue;
+      const providerId = plugin.sdkProvider.providerId;
+      if (typeof providerId !== "string" || !providerId.trim()) {
+        throw new Error(`SDK provider registration for "${sourceProviderId}" requires providerId`);
+      }
+      const runtimeProviderId = entry.capabilities?.chat?.runtimeProviderId || entry.id;
+      if (providerId !== runtimeProviderId) {
+        throw new Error(
+          `SDK provider registration for "${sourceProviderId}" targets "${providerId}" ` +
+          `but chat runtime targets "${runtimeProviderId}"`,
+        );
+      }
+      const previousOwner = owners.get(providerId);
+      if (previousOwner && previousOwner !== sourceProviderId) {
+        throw new Error(
+          `SDK provider registration collision: "${previousOwner}" and "${sourceProviderId}" ` +
+          `both register "${providerId}"`,
+        );
+      }
+      owners.set(providerId, sourceProviderId);
+      const pluginConfig = plugin.sdkProvider.config || {};
+      const mergedHeaders = normalizeProviderHeaders({
+        ...(pluginConfig.headers || {}),
+        ...(entry.headers || {}),
+      });
+      registrations.push({
+        sourceProviderId,
+        providerId,
+        config: {
+          ...pluginConfig,
+          name: entry.displayName,
+          baseUrl: entry.baseUrl,
+          api: entry.api,
+          ...(Object.keys(mergedHeaders).length > 0 ? { headers: mergedHeaders } : {}),
+        },
+      });
+    }
+    return registrations;
   }
 
   /**
@@ -789,7 +866,7 @@ export class ProviderRegistry {
       ? []
       : hasExplicitModels
       ? explicitConfig.models
-      : this.getDefaultModels(canonicalProviderId);
+      : this.getDefaultModelEntries(canonicalProviderId);
     const models = Array.isArray(selectedModels)
       ? cloneData(selectedModels).filter((model) => getModelType(canonicalProviderId, model) === "chat")
       : [];
@@ -823,7 +900,7 @@ export class ProviderRegistry {
       ? selection.explicitConfig?.models
       : [];
     return mergeProviderModelEntries(
-      this.getDefaultModels(sourceProviderId),
+      this.getDefaultModelEntries(sourceProviderId),
       explicitModels,
     ).filter((model) => getModelType(sourceProviderId, model) === "chat");
   }
@@ -1073,15 +1150,25 @@ export class ProviderRegistry {
   }
 
   /**
-   * 获取某 provider 的默认模型列表（来自 lib/default-models.json）
+   * 获取某 provider 的默认模型 ID 列表（公开兼容契约）。
    * @param {string} providerId
    * @returns {string[]}
    */
   getDefaultModels(providerId) {
-    if (_defaultModels[providerId]) return _defaultModels[providerId];
+    return this.getDefaultModelEntries(providerId).map(getModelId).filter(Boolean);
+  }
+
+  /**
+   * 获取某 provider 的完整默认模型声明。Catalog 投影必须走这里，避免
+   * 将 ProviderPlugin 内的协议与能力元数据压缩成裸 ID。
+   * @param {string} providerId
+   * @returns {Array<string|object>}
+   */
+  getDefaultModelEntries(providerId) {
+    if (_defaultModels[providerId]) return cloneData(_defaultModels[providerId]);
     const plugin = this._plugins.get(providerId);
     if (Array.isArray(plugin?.models)) {
-      return plugin.models.map(getModelId).filter(Boolean);
+      return cloneData(plugin.models).filter((model) => getModelId(model));
     }
     return [];
   }
@@ -1512,13 +1599,21 @@ export class ProviderRegistry {
     const persistAsLocalPlugin = isLocalProviderPlugin(existingPlugin) || !existingPlugin;
 
     if (seedDefaultModels && (!Array.isArray(nextProvider.models) || nextProvider.models.length === 0)) {
-      const defaults = this.getDefaultModels(providerId);
+      const defaults = this.getDefaultModelEntries(providerId);
       if (defaults.length > 0) nextProvider.models = [...defaults];
     }
 
     if (persistAsLocalPlugin) {
       userConfig[providerId] = this._writeLocalProviderPlugin(providerId, nextProvider, existingPlugin);
     } else {
+      const runtime = existingPlugin?.runtime
+        ? validateProviderRuntime(existingPlugin.runtime)
+        : null;
+      assertAllowedOAuthHttpBaseUrl(
+        providerId,
+        nextProvider.base_url || existingPlugin?.defaultBaseUrl,
+        runtime,
+      );
       validateProviderModels(providerId, nextProvider.models, { baseUrl: nextProvider.base_url });
       userConfig[providerId] = nextProvider;
     }

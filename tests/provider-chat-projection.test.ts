@@ -94,6 +94,92 @@ describe("ProviderRegistry chat projection plans", () => {
     });
   });
 
+  it("projects Grok OAuth through its dedicated subscription runtime", () => {
+    const registry = new ProviderRegistry(tmpHome);
+    registry.reload();
+
+    const plan = registry.getChatProjectionPlans()
+      .find((item) => item.sourceProviderId === "xai-oauth");
+    expect(plan).toMatchObject({
+      sourceProviderId: "xai-oauth",
+      runtimeProviderId: "xai-oauth",
+      projection: "models-json",
+      credentialSource: "auth-storage",
+      selectionMode: "default",
+      config: {
+        base_url: "https://cli-chat-proxy.grok.com/v1",
+        api: "openai-responses",
+      },
+    });
+    expect(plan?.config.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "grok-4.5",
+        api: "openai-responses",
+        context: 500_000,
+        maxOutput: 128_000,
+        image: true,
+        reasoning: true,
+      }),
+      expect.objectContaining({ id: "grok-4.3", context: 1_000_000 }),
+    ]));
+    expect(plan?.config.headers).toEqual({
+      "x-xai-token-auth": "xai-grok-cli",
+      "x-grok-client-version": "0.2.95",
+      "x-grok-client-identifier": "hana",
+    });
+    expect(registry.getDefaultModels("xai-oauth")).toEqual([
+      "grok-4.5",
+      "grok-4.5-latest",
+      "grok-build-latest",
+      "grok-4.3",
+    ]);
+
+    expect(registry.getSdkProviderRegistrations()).toEqual([
+      expect.objectContaining({
+        sourceProviderId: "xai-oauth",
+        providerId: "xai-oauth",
+        config: expect.objectContaining({
+          baseUrl: "https://cli-chat-proxy.grok.com/v1",
+          api: "openai-responses",
+          headers: {
+            "x-xai-token-auth": "xai-grok-cli",
+            "x-grok-client-version": "0.2.95",
+            "x-grok-client-identifier": "hana",
+          },
+          oauth: expect.objectContaining({ name: "xAI Grok (OAuth)" }),
+        }),
+      }),
+    ]);
+  });
+
+  it("rejects Grok OAuth base URL overrides outside the bearer-token allowlist", () => {
+    const registry = new ProviderRegistry(tmpHome);
+
+    expect(() => registry.saveProvider("xai-oauth", {
+      base_url: "https://evil.example/v1",
+    })).toThrow(/rejects baseUrl origin.*evil\.example/i);
+  });
+
+  it.each([
+    undefined,
+    [],
+    ["http://oauth.example"],
+    ["https://oauth.example/path"],
+  ])("rejects invalid oauth-http origin allowlists: %j", (allowedBaseUrlOrigins) => {
+    const registry = new ProviderRegistry(tmpHome);
+    expect(() => registry.register({
+      id: "invalid-oauth-runtime",
+      displayName: "Invalid OAuth Runtime",
+      authType: "oauth",
+      defaultBaseUrl: "https://oauth.example/v1",
+      defaultApi: "openai-responses",
+      runtime: {
+        kind: "oauth-http",
+        ...(allowedBaseUrlOrigins === undefined ? {} : { allowedBaseUrlOrigins }),
+      },
+    })).toThrow(/allowedBaseUrlOrigins|bare HTTPS origin/i);
+  });
+
   it("fails closed when two Hana providers target one runtime provider", () => {
     const registry = new ProviderRegistry(tmpHome);
     registry.register({
@@ -113,6 +199,39 @@ describe("ProviderRegistry chat projection plans", () => {
     registry.reload();
 
     expect(() => registry.getChatProjectionPlans()).toThrow(/runtime provider collision/i);
+  });
+
+  it("rejects duplicate SDK provider runtime registrations", () => {
+    const registry = new ProviderRegistry(tmpHome);
+    registry.register({
+      id: "conflicting-sdk-provider",
+      displayName: "Conflicting SDK Provider",
+      authType: "oauth",
+      defaultBaseUrl: "https://conflict.example/v1",
+      defaultApi: "openai-responses",
+      models: ["conflict-model"],
+      capabilities: {
+        chat: {
+          runtimeProviderId: "xai-oauth",
+          projection: "models-json",
+          credentialSource: "auth-storage",
+        },
+      },
+      sdkProvider: {
+        providerId: "xai-oauth",
+        config: {
+          oauth: {
+            name: "Conflict",
+            login: async () => ({ access: "a", refresh: "r", expires: 1 }),
+            refreshToken: async (credentials) => credentials,
+            getApiKey: (credentials) => credentials.access,
+          },
+        },
+      },
+    });
+    registry.reload();
+
+    expect(() => registry.getSdkProviderRegistrations()).toThrow(/registration collision/i);
   });
 
   it("rejects an unknown chat credential source while building provider entries", () => {

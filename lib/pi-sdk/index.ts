@@ -78,6 +78,8 @@ export { AuthStorage };
 
 type OAuthProviderId = Parameters<AuthStorage["login"]>[0];
 export type OAuthLoginCallbacks = Parameters<AuthStorage["login"]>[1];
+export type SdkProviderRegistrationConfig = Parameters<ModelRegistry["registerProvider"]>[1];
+export type SdkOAuthProvider = NonNullable<SdkProviderRegistrationConfig["oauth"]>;
 
 /**
  * OAuth login adapter.
@@ -187,6 +189,28 @@ export function formatModelImageDimensionNote(result) {
  */
 export function createModelRegistry(authStorage, modelsJsonPath) {
   return ModelRegistry.create(authStorage, modelsJsonPath);
+}
+
+/**
+ * Register a provider through the ModelRegistry instance that owns Hana's
+ * AuthStorage. This is intentionally kept at the adapter boundary: importing
+ * pi-ai's module-level OAuth registry would target a different nested package
+ * instance and the login provider would be invisible to AuthStorage.
+ */
+export function registerModelProvider(
+  modelRegistry: ModelRegistry,
+  providerId: string,
+  config: SdkProviderRegistrationConfig,
+): void {
+  modelRegistry.registerProvider(providerId, config);
+}
+
+/** Remove a provider previously registered through registerModelProvider. */
+export function unregisterModelProvider(
+  modelRegistry: ModelRegistry,
+  providerId: string,
+): void {
+  modelRegistry.unregisterProvider(providerId);
 }
 
 /**
