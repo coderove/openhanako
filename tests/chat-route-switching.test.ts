@@ -137,6 +137,97 @@ describe("chat route model switch guard", () => {
     expect(payloads.some((payload) => payload.type === "stream_resume")).toBe(false);
   });
 
+  it("routes compact by sessionId through the manifest current locator", async () => {
+    let createHandlers;
+    const upgradeWebSocket = vi.fn((factory) => {
+      createHandlers = factory;
+      return () => new Response(null);
+    });
+    const session = {
+      isCompacting: false,
+      extensionRunner: {
+        assertActive: vi.fn(),
+        hasHandlers: vi.fn(() => true),
+      },
+      compact: vi.fn(async () => { throw new Error("Nothing to compact"); }),
+    };
+    const hub = { subscribe: vi.fn(), send: vi.fn(async () => {}) };
+    const engine = {
+      agentName: "Hana",
+      abortAllStreaming: vi.fn(async () => {}),
+      getSessionManifest: vi.fn(() => ({ currentLocator: { path: "/tmp/current-b.jsonl" } })),
+      getSessionByPath: vi.fn((path) => path === "/tmp/current-b.jsonl" ? session : null),
+      isDeletedAgentSession: vi.fn(() => false),
+      isSessionStreaming: vi.fn(() => false),
+      slashDispatcher: null,
+    };
+
+    createChatRoute(engine, hub, { upgradeWebSocket });
+    const handlers = createHandlers({});
+    const ws = { readyState: 1, send: vi.fn() };
+    handlers.onMessage({
+      data: JSON.stringify({ type: "compact", sessionId: "sess_a" }),
+    }, ws);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(engine.getSessionManifest).toHaveBeenCalledWith("sess_a");
+    expect(engine.getSessionByPath).toHaveBeenCalledWith("/tmp/current-b.jsonl");
+    expect(session.compact).toHaveBeenCalledTimes(1);
+    expect(ws.send.mock.calls.map(([raw]) => JSON.parse(raw))).toEqual([
+      expect.objectContaining({
+        type: "compaction_accepted",
+        sessionId: "sess_a",
+        sessionPath: "/tmp/current-b.jsonl",
+      }),
+      expect.objectContaining({
+        type: "compaction_result",
+        sessionId: "sess_a",
+        sessionPath: "/tmp/current-b.jsonl",
+        status: "noop",
+        reason: "nothing_to_compact",
+      }),
+    ]);
+  });
+
+  it("converts legacy compact paths at the boundary and never executes against the stale locator", async () => {
+    let createHandlers;
+    const upgradeWebSocket = vi.fn((factory) => {
+      createHandlers = factory;
+      return () => new Response(null);
+    });
+    const session = { isCompacting: true };
+    const hub = { subscribe: vi.fn(), send: vi.fn(async () => {}) };
+    const engine = {
+      agentName: "Hana",
+      abortAllStreaming: vi.fn(async () => {}),
+      getSessionIdForPath: vi.fn((path) => path === "/tmp/legacy-a.jsonl" ? "sess_a" : null),
+      getSessionManifest: vi.fn(() => ({ currentLocator: { path: "/tmp/current-b.jsonl" } })),
+      getSessionByPath: vi.fn((path) => path === "/tmp/current-b.jsonl" ? session : null),
+      isDeletedAgentSession: vi.fn(() => false),
+      isSessionStreaming: vi.fn(() => false),
+      slashDispatcher: null,
+    };
+
+    createChatRoute(engine, hub, { upgradeWebSocket });
+    const handlers = createHandlers({});
+    const ws = { readyState: 1, send: vi.fn() };
+    handlers.onMessage({
+      data: JSON.stringify({ type: "compact", sessionPath: "/tmp/legacy-a.jsonl" }),
+    }, ws);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(engine.getSessionIdForPath).toHaveBeenCalledWith("/tmp/legacy-a.jsonl");
+    expect(engine.getSessionByPath).toHaveBeenCalledWith("/tmp/current-b.jsonl");
+    expect(engine.getSessionByPath).not.toHaveBeenCalledWith("/tmp/legacy-a.jsonl");
+    expect(JSON.parse(ws.send.mock.calls[0][0])).toMatchObject({
+      type: "compaction_result",
+      sessionId: "sess_a",
+      sessionPath: "/tmp/current-b.jsonl",
+      status: "failed",
+      reason: "already_compacting",
+    });
+  });
+
   it("routes streaming interject messages through the desktop interjection contract", async () => {
     let createHandlers;
     const upgradeWebSocket = vi.fn((factory) => {

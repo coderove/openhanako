@@ -1224,6 +1224,80 @@ function mockPermissionDefault(mode = 'ask') {
   });
 
   describe('loadSessions 首次自动切换', () => {
+    it('reconciles the focused locator by currentSessionId without switching or reloading chat', async () => {
+      Object.assign(mockState, {
+        currentSessionId: 'sess_a',
+        currentSessionPath: '/session/old-a.jsonl',
+        pendingNewSession: false,
+        pendingSessionSwitchPath: null,
+        sessions: [{ path: '/session/old-a.jsonl', sessionId: 'sess_a' }],
+      });
+      mockFetch.mockResolvedValueOnce(jsonResponse([
+        { path: '/session/current-b.jsonl', sessionId: 'sess_a' },
+      ]));
+
+      await loadSessions();
+
+      expect(mockState.currentSessionId).toBe('sess_a');
+      expect(mockState.currentSessionPath).toBe('/session/current-b.jsonl');
+      expect(mockState.sessionLocatorsById).toMatchObject({
+        sess_a: { path: '/session/current-b.jsonl' },
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses reconciled state before deciding whether the first session needs auto-switching', async () => {
+      Object.assign(mockState, {
+        currentSessionId: 'sess_b',
+        currentSessionPath: null,
+        pendingNewSession: false,
+        pendingSessionSwitchPath: null,
+      });
+      mockFetch.mockResolvedValueOnce(jsonResponse([
+        { path: '/session/a.jsonl', sessionId: 'sess_a' },
+        { path: '/session/b.jsonl', sessionId: 'sess_b' },
+      ]));
+
+      await loadSessions();
+
+      expect(mockState.currentSessionId).toBe('sess_b');
+      expect(mockState.currentSessionPath).toBe('/session/b.jsonl');
+      expect(mockState.pendingSessionSwitchPath).toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not infer focused identity from path when currentSessionId is absent', async () => {
+      Object.assign(mockState, {
+        currentSessionId: null,
+        currentSessionPath: '/session/old-a.jsonl',
+        sessions: [{ path: '/session/old-a.jsonl', sessionId: 'sess_a' }],
+      });
+      mockFetch.mockResolvedValueOnce(jsonResponse([
+        { path: '/session/current-b.jsonl', sessionId: 'sess_a' },
+      ]));
+
+      await loadSessions();
+
+      expect(mockState.currentSessionPath).toBe('/session/old-a.jsonl');
+    });
+
+    it('does not overwrite an in-flight navigation target while reconciling locators', async () => {
+      Object.assign(mockState, {
+        currentSessionId: 'sess_a',
+        currentSessionPath: '/session/old-a.jsonl',
+        pendingSessionSwitchPath: '/session/target.jsonl',
+        sessions: [{ path: '/session/old-a.jsonl', sessionId: 'sess_a' }],
+      });
+      mockFetch.mockResolvedValueOnce(jsonResponse([
+        { path: '/session/current-b.jsonl', sessionId: 'sess_a' },
+      ]));
+
+      await loadSessions();
+
+      expect(mockState.currentSessionPath).toBe('/session/old-a.jsonl');
+      expect(mockState.pendingSessionSwitchPath).toBe('/session/target.jsonl');
+    });
+
     it('已有 pending session 导航意图时，不用列表第一项覆盖它', async () => {
       Object.assign(mockState, {
         currentSessionPath: null,

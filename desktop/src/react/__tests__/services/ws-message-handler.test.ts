@@ -911,6 +911,8 @@ describe('ws-message-handler compaction lifecycle', () => {
       contextWindow: null,
       contextPercent: null,
       contextBySession: {},
+      sessionLocatorsById: {},
+      toasts: [],
     } as never);
   });
 
@@ -943,6 +945,65 @@ describe('ws-message-handler compaction lifecycle', () => {
       window: 200_000,
       percent: null,
     });
+  });
+
+  it('routes lifecycle by sessionId without trusting stale path metadata as locator truth', () => {
+    useStore.setState({
+      sessionLocatorsById: {
+        sess_b: { path: '/session/current-b.jsonl' },
+      },
+    } as never);
+
+    handleServerMessage({
+      type: 'compaction_start',
+      sessionId: 'sess_b',
+      sessionPath: '/session/stale-a.jsonl',
+      reason: 'manual',
+    });
+
+    expect(useStore.getState().compactingSessions).toEqual(['sess_b']);
+    expect(useStore.getState().sessionLocatorsById.sess_b).toEqual({ path: '/session/current-b.jsonl' });
+
+    handleServerMessage({
+      type: 'compaction_end',
+      sessionId: 'sess_b',
+      sessionPath: '/session/stale-a.jsonl',
+      tokens: 20_000,
+      contextWindow: 200_000,
+      percent: 10,
+    });
+
+    expect(useStore.getState().compactingSessions).toEqual([]);
+    expect(useStore.getState().contextBySession.sess_b).toEqual({
+      tokens: 20_000,
+      window: 200_000,
+      percent: 10,
+    });
+    expect(useStore.getState().sessionLocatorsById.sess_b).toEqual({ path: '/session/current-b.jsonl' });
+  });
+
+  it('tracks accepted and clears succeeded results by sessionId', () => {
+    handleServerMessage({ type: 'compaction_accepted', sessionId: 'sess_a' });
+    expect(useStore.getState().compactingSessions).toEqual(['sess_a']);
+
+    handleServerMessage({ type: 'compaction_result', sessionId: 'sess_a', status: 'succeeded' });
+    expect(useStore.getState().compactingSessions).toEqual([]);
+  });
+
+  it('clears busy and surfaces noop and failed results', () => {
+    for (const [status, message] of [
+      ['noop', 'Nothing to compact'],
+      ['failed', 'Compaction failed: provider unavailable'],
+    ]) {
+      handleServerMessage({ type: 'compaction_accepted', sessionId: 'sess_a' });
+      handleServerMessage({ type: 'compaction_result', sessionId: 'sess_a', status, message });
+    }
+
+    expect(useStore.getState().compactingSessions).toEqual([]);
+    expect(useStore.getState().toasts.slice(-2)).toEqual([
+      expect.objectContaining({ text: 'Nothing to compact', type: 'info' }),
+      expect.objectContaining({ text: 'Compaction failed: provider unavailable', type: 'error' }),
+    ]);
   });
 
   it('preserves context_usage window even when tokens are unknown', () => {

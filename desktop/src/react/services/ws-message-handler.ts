@@ -64,6 +64,17 @@ function sessionIdentityFromMessage(msg: any): { sessionId: string | null; sessi
 function rememberSessionLocatorFromMessage(msg: any): boolean {
   const { sessionId, sessionPath } = sessionIdentityFromMessage(msg);
   if (!sessionId || !sessionPath) return true;
+  if (
+    msg?.type === 'compaction_accepted'
+    || msg?.type === 'compaction_result'
+    || msg?.type === 'compaction_start'
+    || msg?.type === 'compaction_end'
+  ) {
+    // Compaction path is transport metadata only. Identity routing uses sessionId,
+    // and this event family must never mutate the locator truth maintained by the
+    // sessions projection / manifest boundary.
+    return true;
+  }
   const snapshot = useStore.getState();
   const knownLocatorPath = snapshot.sessionLocatorsById?.[sessionId]?.path || null;
   const authoritativeLocatorUpdate = msg?.type === 'session_created';
@@ -277,24 +288,68 @@ function applyTurnEndSideEffects(msg: any): void {
   }
 }
 
-function applyCompactionLifecycle(msg: any): void {
-  const sp = msg.sessionPath;
-  if (!sp) return;
+function compactionIdentity(msg: any): { key: string | null; sessionId: string | null; sessionPath: string | null } {
+  const { sessionId, sessionPath } = sessionIdentityFromMessage(msg);
+  return { key: sessionId || sessionPath, sessionId, sessionPath };
+}
 
-  if (msg.type === 'compaction_start') {
-    useStore.getState().addCompactingSession(sp);
+function setCompactionBusy(msg: any, busy: boolean): void {
+  const { key, sessionId, sessionPath } = compactionIdentity(msg);
+  if (!key) return;
+  useStore.setState((state: any) => {
+    const withoutIdentity = (state.compactingSessions || []).filter((item: string) => (
+      item !== key && item !== sessionId && item !== sessionPath
+    ));
+    return { compactingSessions: busy ? [...withoutIdentity, key] : withoutIdentity };
+  });
+}
+
+function updateCompactionContext(msg: any): void {
+  const { key, sessionId, sessionPath } = compactionIdentity(msg);
+  if (!key) return;
+  useStore.setState((state: any) => {
+    const existing = state.contextBySession?.[key]
+      || (sessionPath ? sessionScopedValue(state, state.contextBySession, sessionPath) : null);
+    const value = {
+      tokens: msg.tokens ?? null,
+      window: msg.contextWindow ?? existing?.window ?? null,
+      percent: msg.percent ?? null,
+    };
+    const contextBySession = { ...(state.contextBySession || {}), [key]: value };
+    if (sessionId && sessionPath && sessionId !== sessionPath) delete contextBySession[sessionPath];
+    const focused = (sessionId && state.currentSessionId === sessionId)
+      || (!sessionId && sessionPath && state.currentSessionPath === sessionPath);
+    return {
+      contextBySession,
+      ...(focused ? {
+        contextTokens: value.tokens,
+        contextWindow: value.window,
+        contextPercent: value.percent,
+      } : {}),
+    };
+  });
+}
+
+function applyCompactionMessage(msg: any): void {
+  if (msg.type === 'compaction_accepted' || msg.type === 'compaction_start') {
+    setCompactionBusy(msg, true);
     return;
   }
+  if (msg.type === 'compaction_end') {
+    setCompactionBusy(msg, false);
+    updateCompactionContext(msg);
+    return;
+  }
+  if (msg.type !== 'compaction_result') return;
 
-  if (msg.type !== 'compaction_end') return;
-
-  useStore.getState().removeCompactingSession(sp);
-  const existingWindow = sessionScopedValue(useStore.getState(), useStore.getState().contextBySession, sp)?.window ?? null;
-  const window = msg.contextWindow ?? existingWindow;
-  updateKeyed('contextBySession', sp,
-    { tokens: msg.tokens ?? null, window, percent: msg.percent ?? null },
-    (_s, d) => ({ contextTokens: d.tokens, contextWindow: d.window, contextPercent: d.percent }),
-  );
+  setCompactionBusy(msg, false);
+  if (msg.status === 'noop' || msg.status === 'failed') {
+    const message = nonEmptyString(msg.message)
+      || (msg.status === 'noop' ? 'Nothing to compact' : 'Compaction failed');
+    useStore.getState().addToast(message, msg.status === 'noop' ? 'info' : 'error', 6000, {
+      dedupeKey: `compaction-result:${msg.sessionId || msg.sessionPath || 'unknown'}:${msg.status}`,
+    });
+  }
 }
 
 export function applyStreamingStatus(
@@ -460,8 +515,14 @@ export function handleServerMessage(msg: any): void {
     if (!updateSessionStreamMeta(msg)) return;
   }
 
-  if (msg.type === 'compaction_start' || msg.type === 'compaction_end') {
-    applyCompactionLifecycle(msg);
+  if (
+    msg.type === 'compaction_accepted'
+    || msg.type === 'compaction_result'
+    || msg.type === 'compaction_start'
+    || msg.type === 'compaction_end'
+  ) {
+    applyCompactionMessage(msg);
+    if (msg.type === 'compaction_accepted' || msg.type === 'compaction_result') return;
   }
 
   applyInputSessionConfirmationBlock(msg);
@@ -893,8 +954,15 @@ export function handleServerMessage(msg: any): void {
     }
 
     case 'error': {
-      const sp = msg.sessionPath;
-      if (!sp) { console.warn('[ws] event missing sessionPath:', msg.type); break; }
+      const { sessionPath: sp } = sessionIdentityFromMessage(msg);
+      if (!sp) {
+        if (msg.code === 'session_identity_unresolved' || msg.code === 'session_identity_mismatch') {
+          useStore.getState().addToast(msg.message || 'Unable to resolve session identity', 'error', 6000);
+        } else {
+          console.warn('[ws] event missing sessionPath:', msg.type);
+        }
+        break;
+      }
       useStore.getState().setInlineError(sp, msg.message);
       break;
     }

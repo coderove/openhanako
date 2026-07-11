@@ -521,13 +521,32 @@ export async function loadSessions(): Promise<void> {
     const localSessions = useStore.getState().sessions || [];
     const sessions = mergeSessionsWithOptimisticFirstMessages(serverSessions, localSessions);
 
-    const s = useStore.getState();
-    useStore.setState((state: any) => ({
-      sessions,
-      sessionLocatorsById: mergeSessionLocators(state.sessionLocatorsById || {}, sessions),
-    }));
+    useStore.setState((state: any) => {
+      const sessionLocatorsById = mergeSessionLocators(state.sessionLocatorsById || {}, sessions);
+      const currentSessionId = typeof state.currentSessionId === 'string' && state.currentSessionId.trim()
+        ? state.currentSessionId.trim()
+        : null;
+      const currentLocatorPath = currentSessionId
+        && !state.pendingNewSession
+        && !state.pendingSessionSwitchPath
+        ? sessionLocatorsById[currentSessionId]?.path || null
+        : null;
+      return {
+        sessions,
+        sessionLocatorsById,
+        ...(currentLocatorPath && currentLocatorPath !== state.currentSessionPath
+          ? { currentSessionPath: currentLocatorPath }
+          : {}),
+      };
+    });
 
-    if (sessions.length > 0 && !s.currentSessionPath && !s.pendingNewSession && !s.pendingSessionSwitchPath) {
+    const latest = useStore.getState();
+    if (
+      sessions.length > 0
+      && !latest.currentSessionPath
+      && !latest.pendingNewSession
+      && !latest.pendingSessionSwitchPath
+    ) {
       // 首次加载：走完整的 switchSession 确保后端同步 + 消息加载
       await switchSession(sessions[0].path);
     }

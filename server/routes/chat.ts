@@ -130,11 +130,18 @@ function deferredResultFailureBlock(event: any) {
   };
 }
 
-export function toCompactionLifecycleWsMessage(event: any, sessionPath: any, getSessionByPath: any) {
+export function toCompactionLifecycleWsMessage(
+  event: any,
+  sessionPath: any,
+  getSessionByPath: any,
+  getSessionIdForPath: any,
+) {
   if (!sessionPath) return null;
+  const sessionId = getSessionIdForPath?.(sessionPath) ?? null;
   if (event.type === "compaction_start") {
     return {
       type: "compaction_start",
+      sessionId,
       sessionPath,
       reason: event.reason ?? null,
     };
@@ -144,6 +151,7 @@ export function toCompactionLifecycleWsMessage(event: any, sessionPath: any, get
   const usage = getSessionByPath?.(sessionPath)?.getContextUsage?.();
   return {
     type: "compaction_end",
+    sessionId,
     sessionPath,
     reason: event.reason ?? null,
     aborted: event.aborted ?? false,
@@ -152,6 +160,70 @@ export function toCompactionLifecycleWsMessage(event: any, sessionPath: any, get
     contextWindow: usage?.contextWindow ?? null,
     percent: usage?.percent ?? null,
   };
+}
+
+function normalizedIdentity(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sessionIdForLegacyCompactPath(engine: any, sessionPath: string) {
+  try {
+    return normalizedIdentity(engine.getSessionIdForPath?.(sessionPath));
+  } catch {
+    return null;
+  }
+}
+
+export function resolveCompactSessionTarget(engine: any, msg: any) {
+  let sessionId = normalizedIdentity(msg?.sessionId);
+  const legacySessionPath = normalizedIdentity(msg?.sessionPath);
+
+  if (sessionId && legacySessionPath) {
+    const legacySessionId = sessionIdForLegacyCompactPath(engine, legacySessionPath);
+    if (legacySessionId && legacySessionId !== sessionId) {
+      return {
+        ok: false as const,
+        code: "session_identity_mismatch",
+        message: "sessionId and sessionPath refer to different sessions",
+        sessionId,
+      };
+    }
+  }
+
+  if (!sessionId && legacySessionPath) {
+    sessionId = sessionIdForLegacyCompactPath(engine, legacySessionPath);
+  }
+  if (!sessionId) {
+    return {
+      ok: false as const,
+      code: "session_identity_unresolved",
+      message: "Unable to resolve session identity",
+      sessionId: null,
+    };
+  }
+
+  let sessionPath = null;
+  try {
+    sessionPath = normalizedIdentity(engine.getSessionManifest?.(sessionId)?.currentLocator?.path);
+  } catch {
+    sessionPath = null;
+  }
+  if (!sessionPath) {
+    return {
+      ok: false as const,
+      code: "session_identity_unresolved",
+      message: "Unable to resolve current session locator",
+      sessionId,
+    };
+  }
+
+  return { ok: true as const, sessionId, sessionPath };
+}
+
+function compactionNoopReason(message: string) {
+  if (message.includes("Already compacted")) return "already_compacted";
+  if (message.includes("Nothing to compact")) return "nothing_to_compact";
+  return null;
 }
 
 export function toNotificationWsMessage(event: any, sessionPath: any = null) {
@@ -875,6 +947,7 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
       event,
       sessionPath,
       (sp) => engine.getSessionByPath(sp),
+      (sp) => sessionIdForPath(sp),
     );
     if (compactionMessage) {
       broadcast(compactionMessage);
@@ -1654,25 +1727,47 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
             }
 
             if (msg.type === "compact") {
-              const compactPath = requireSessionPath(msg, ws); if (!compactPath) return;
+              const compactTarget = resolveCompactSessionTarget(engine, msg);
+              if (!compactTarget.ok) {
+                wsSend(ws, {
+                  type: "error",
+                  code: compactTarget.code,
+                  message: compactTarget.message,
+                  sessionId: compactTarget.sessionId,
+                });
+                return;
+              }
+              const { sessionId: compactSessionId, sessionPath: compactPath } = compactTarget;
+              const compactResult = (status, details: Record<string, any> = {}) => wsSend(ws, {
+                type: "compaction_result",
+                sessionId: compactSessionId,
+                sessionPath: compactPath,
+                status,
+                ...details,
+              });
               if (isDeletedAgentSessionPath(compactPath)) {
-                rejectDeletedAgentSession(ws, compactPath);
+                compactResult("failed", { reason: "agent_deleted", message: "agent_deleted" });
                 return;
               }
               let session = engine.getSessionByPath(compactPath)
                 || await engine.ensureSessionLoaded?.(compactPath);
               if (!session) {
-                wsSend(ws, { type: "error", message: t("error.noActiveSession"), sessionPath: compactPath });
+                compactResult("failed", { reason: "session_unavailable", message: t("error.noActiveSession") });
                 return;
               }
               if (session.isCompacting) {
-                wsSend(ws, { type: "error", message: t("error.compacting"), sessionPath: compactPath });
+                compactResult("failed", { reason: "already_compacting", message: t("error.compacting") });
                 return;
               }
               if (engine.isSessionStreaming(compactPath)) {
-                wsSend(ws, { type: "error", message: t("error.waitForReply"), sessionPath: compactPath });
+                compactResult("failed", { reason: "session_streaming", message: t("error.waitForReply") });
                 return;
               }
+              wsSend(ws, {
+                type: "compaction_accepted",
+                sessionId: compactSessionId,
+                sessionPath: compactPath,
+              });
               try {
                 const compacted = await compactSessionWithCachePreservationRecoveringRuntime({
                   session,
@@ -1681,10 +1776,17 @@ export function createChatRoute(engine: any, hub: any, { upgradeWebSocket }: any
                   reloadSessionRuntime: (path) => engine.reloadSessionRuntime?.(path),
                 });
                 session = compacted.session;
+                compactResult("succeeded");
               } catch (err) {
                 const errMsg = err.message || "";
-                if (!errMsg.includes("Already compacted") && !errMsg.includes("Nothing to compact")) {
-                  wsSend(ws, { type: "error", message: t("error.compactFailed", { msg: errMsg }), sessionPath: compactPath });
+                const noopReason = compactionNoopReason(errMsg);
+                if (noopReason) {
+                  compactResult("noop", { reason: noopReason, message: errMsg });
+                } else {
+                  compactResult("failed", {
+                    reason: "compaction_failed",
+                    message: t("error.compactFailed", { msg: errMsg }),
+                  });
                 }
               }
               return;

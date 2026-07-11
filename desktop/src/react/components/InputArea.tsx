@@ -697,8 +697,8 @@ function InputAreaInner({ surface }: Required<InputAreaProps>) {
     await sendAsUser(XING_PROMPT);
   }, [sendAsUser, editor]);
   const compactFn = useCallback(async () => {
-    await executeCompact(setSlashBusy, () => { editor?.commands.clearContent(); }, setSlashMenuOpen)();
-  }, [editor]);
+    await executeCompact(t, setSlashBusy, () => { editor?.commands.clearContent(); }, setSlashMenuOpen)();
+  }, [editor, t]);
 
   const slashAgentId = pendingNewSession ? (selectedAgentId || currentAgentId) : currentAgentId;
   const skillItems = useSkillSlashItems({ enabled: surface !== 'mobile', agentId: slashAgentId });
