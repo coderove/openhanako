@@ -68,12 +68,44 @@ export interface AutoUpdateState {
   } | null;
 }
 
-/** IPC 返回形状（train-update-status）：OTA 是否已把一列车暂存就绪 */
+/** train-update-status 里 `available` 字段的形状：检查阶段发现的、尚未下载的一班车 */
+export interface TrainUpdateAvailable {
+  train: number;
+  version: string;
+  serverSha256: string;
+  rendererSha256: string;
+  sizes: { server: number; renderer: number };
+  recordedAt: string;
+}
+
+/**
+ * IPC 返回形状（train-update-status）：`staged` 反映的仍是"两个 next 指针是否
+ * 都已写好、可以立即 promote"（下载与激活由用户点击 apply 触发，参见
+ * `train-update-apply`），但表盘 UI（`useTrainUpdateState` 往上的一切
+ * 消费者）不再读这三个旧字段——staged 概念对界面已经不存在，点了就是一条
+ * 龙下载到应用；`available` 才是新的触发源——最近一次检查发现的、内容确实
+ * 有差异的一班车（尚未下载），供设置页/贴纸决定要不要提示用户。
+ * `currentVersion` 是一切面向用户的版本显示的单一源：已激活内容
+ * （renderer/server 归档）的产品版本，不是壳版本——由主进程 `train-update-status`
+ * handler 统一附加，不需要也不应该再单独调用 `getAppVersion`。
+ */
 export interface TrainUpdateStatus {
   staged: boolean;
   train: number | null;
   version: string | null;
   minShellBlocked: boolean;
+  available?: TrainUpdateAvailable | null;
+  lastError?: string | null;
+  lastCheckedAt?: string | null;
+  currentVersion: string;
+}
+
+/** train-update-apply 下载阶段的进度事件（train-update-progress IPC 广播） */
+export interface TrainUpdateProgress {
+  phase: 'downloading' | 'verifying' | 'activating';
+  kind: 'server' | 'renderer';
+  receivedBytes: number;
+  totalBytes: number;
 }
 
 export interface AutoLaunchStatus {
@@ -538,8 +570,12 @@ export interface PlatformApi {
   onAutoUpdateState?(callback: (state: AutoUpdateState) => void): (() => void) | void;
   // ── 列车更新（OTA） ──
   trainUpdateStatus?(): Promise<TrainUpdateStatus>;
-  trainUpdateCheck?(): Promise<{ outcome: string; train?: number; error?: string }>;
+  trainUpdateCheck?(): Promise<{ outcome: string; train?: number; version?: string; minShellBlocked?: boolean; error?: string }>;
   trainUpdateApply?(): Promise<{ ok: boolean; error?: string }>;
+  /** 后台自动检查发现新列车时的广播（自动流程只到"发现"为止，绝不静默下载）。 */
+  onTrainUpdateAvailable?(callback: (payload: { version: string; minShellBlocked: boolean }) => void): (() => void) | void;
+  /** train-update-apply 下载/校验/激活阶段的进度推送，只发给发起该次 apply 的窗口。 */
+  onTrainUpdateProgress?(callback: (progress: TrainUpdateProgress) => void): (() => void) | void;
   /** 关于页更新历史：在线最近五个已发布版本；网络失败时显式返回包内备份来源。 */
   getUpdateDigestHistory?(): Promise<UpdateDigestHistoryResult>;
   getAutoLaunchStatus?(): Promise<AutoLaunchStatus>;
