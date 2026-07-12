@@ -6,10 +6,11 @@ import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useTrainUpdateState } from '../../hooks/use-train-update-state';
-import type { PlatformApi, TrainUpdateAvailable, TrainUpdateProgress, TrainUpdateStatus } from '../../types';
+import type { CrashFallbackNotice, PlatformApi, TrainUpdateAvailable, TrainUpdateProgress, TrainUpdateStatus } from '../../types';
 
 let availableListener: ((payload: { version: string; minShellBlocked: boolean }) => void) | null = null;
 let progressListener: ((progress: TrainUpdateProgress) => void) | null = null;
+let fallbackListener: ((payload: CrashFallbackNotice) => void) | null = null;
 
 function baseStatus(partial: Partial<TrainUpdateStatus> = {}): TrainUpdateStatus {
   return {
@@ -39,6 +40,7 @@ function available(version: string): TrainUpdateAvailable {
 function installHana(overrides: Partial<PlatformApi> = {}) {
   availableListener = null;
   progressListener = null;
+  fallbackListener = null;
   window.hana = {
     trainUpdateStatus: vi.fn().mockResolvedValue(baseStatus()),
     trainUpdateCheck: vi.fn().mockResolvedValue({ outcome: 'up-to-date' }),
@@ -51,12 +53,32 @@ function installHana(overrides: Partial<PlatformApi> = {}) {
       progressListener = cb;
       return () => { progressListener = null; };
     }),
+    onTrainFallbackNotice: vi.fn((cb) => {
+      fallbackListener = cb;
+      return () => { fallbackListener = null; };
+    }),
+    ackTrainFallbackNotice: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
   } as unknown as PlatformApi;
 }
 
 function Harness() {
-  const { currentVersion, available: availableUpdate, minShellBlocked, lastError, lastCheckedAt, phase, progress, checkNow, applyNow } = useTrainUpdateState();
+  const {
+    currentVersion,
+    available: availableUpdate,
+    minShellBlocked,
+    lastError,
+    lastCheckedAt,
+    manifestSource,
+    manifestReleasedAt,
+    originUnreachable,
+    phase,
+    progress,
+    fallbackNotice,
+    checkNow,
+    applyNow,
+    ackFallbackNotice,
+  } = useTrainUpdateState();
   return (
     <div>
       <div data-testid="currentVersion">{currentVersion || 'none'}</div>
@@ -64,10 +86,15 @@ function Harness() {
       <div data-testid="minShellBlocked">{String(minShellBlocked)}</div>
       <div data-testid="lastError">{lastError ?? 'none'}</div>
       <div data-testid="lastCheckedAt">{lastCheckedAt ?? 'none'}</div>
+      <div data-testid="manifestSource">{manifestSource ?? 'none'}</div>
+      <div data-testid="manifestReleasedAt">{manifestReleasedAt ?? 'none'}</div>
+      <div data-testid="originUnreachable">{String(originUnreachable)}</div>
       <div data-testid="phase">{phase}</div>
       <div data-testid="progress">{progress ? `${progress.receivedBytes}/${progress.totalBytes}` : 'none'}</div>
+      <div data-testid="fallbackNotice">{fallbackNotice ? `${fallbackNotice.kind}:${fallbackNotice.fromVersion}->${fallbackNotice.toVersion}` : 'none'}</div>
       <button onClick={() => void checkNow()}>check</button>
       <button onClick={() => void applyNow()}>apply</button>
+      <button onClick={() => void ackFallbackNotice()}>ack-fallback</button>
     </div>
   );
 }
@@ -105,6 +132,33 @@ describe('useTrainUpdateState', () => {
     await waitFor(() => expect(screen.getByTestId('available').textContent).toBe('0.389.0'));
     expect(screen.getByTestId('lastError').textContent).toBe('network down');
     expect(screen.getByTestId('lastCheckedAt').textContent).toBe('2026-07-11T08:00:00.000Z');
+  });
+
+  it('hydrates manifestSource/manifestReleasedAt/originUnreachable from the cached status on mount, forwarded verbatim', async () => {
+    installHana({
+      trainUpdateStatus: vi.fn().mockResolvedValue(baseStatus({
+        manifestSource: 'mirror',
+        manifestReleasedAt: '2026-07-11T00:00:00.000Z',
+        originUnreachable: true,
+      })),
+    });
+
+    render(<Harness />);
+
+    await waitFor(() => expect(screen.getByTestId('manifestSource').textContent).toBe('mirror'));
+    expect(screen.getByTestId('manifestReleasedAt').textContent).toBe('2026-07-11T00:00:00.000Z');
+    expect(screen.getByTestId('originUnreachable').textContent).toBe('true');
+  });
+
+  it('defaults manifestSource/manifestReleasedAt to null and originUnreachable to false when the status omits them (pre-upgrade shell)', async () => {
+    installHana({ trainUpdateStatus: vi.fn().mockResolvedValue(baseStatus()) });
+
+    render(<Harness />);
+
+    await waitFor(() => expect(screen.getByTestId('currentVersion').textContent).toBe('0.388.0'));
+    expect(screen.getByTestId('manifestSource').textContent).toBe('none');
+    expect(screen.getByTestId('manifestReleasedAt').textContent).toBe('none');
+    expect(screen.getByTestId('originUnreachable').textContent).toBe('false');
   });
 
   it('never reads the legacy staged/train/version fields — only `available` decides whether an update is showing', async () => {
@@ -216,5 +270,49 @@ describe('useTrainUpdateState', () => {
 
     expect(screen.getByTestId('lastError').textContent).toBe('sha256 mismatch');
     expect(screen.getByTestId('phase').textContent).toBe('idle');
+  });
+
+  it('hydrates fallbackNotice from the cached status on mount (cold-start pull path)', async () => {
+    installHana({
+      trainUpdateStatus: vi.fn().mockResolvedValue(baseStatus({
+        fallbackNotice: { kind: 'server', fromVersion: '0.390.0', toVersion: '0.389.0', quarantinedTrain: 7 },
+      })),
+    });
+
+    render(<Harness />);
+
+    await waitFor(() => expect(screen.getByTestId('fallbackNotice').textContent).toBe('server:0.390.0->0.389.0'));
+  });
+
+  it('lights up in real time when onTrainFallbackNotice fires, without waiting for a remount (renderer runtime crash path)', async () => {
+    installHana();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('fallbackNotice').textContent).toBe('none'));
+
+    act(() => {
+      fallbackListener?.({ kind: 'renderer', fromVersion: '0.391.0', toVersion: '0.390.0', quarantinedTrain: 3 });
+    });
+
+    expect(screen.getByTestId('fallbackNotice').textContent).toBe('renderer:0.391.0->0.390.0');
+  });
+
+  it('ackFallbackNotice optimistically clears the notice and calls window.hana.ackTrainFallbackNotice', async () => {
+    const ackTrainFallbackNotice = vi.fn().mockResolvedValue({ ok: true });
+    installHana({
+      trainUpdateStatus: vi.fn().mockResolvedValue(baseStatus({
+        fallbackNotice: { kind: 'server', fromVersion: '0.390.0', toVersion: '0.389.0', quarantinedTrain: null },
+      })),
+      ackTrainFallbackNotice,
+    });
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('fallbackNotice').textContent).toBe('server:0.390.0->0.389.0'));
+
+    await act(async () => {
+      screen.getByText('ack-fallback').click();
+    });
+
+    expect(screen.getByTestId('fallbackNotice').textContent).toBe('none');
+    expect(ackTrainFallbackNotice).toHaveBeenCalledTimes(1);
   });
 });

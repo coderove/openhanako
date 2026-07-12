@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { TrainUpdateAvailable, TrainUpdateStatus } from '../types';
+import type { CrashFallbackNotice, TrainUpdateAvailable, TrainUpdateStatus } from '../types';
 
 /**
  * 列车更新（OTA）状态 hook——表盘（左下角贴纸 + 设置页关于 tab）唯一的数据源。
@@ -38,14 +38,28 @@ export interface UseTrainUpdateStateResult {
   lastError: string | null;
   /** 最近一次检查完成的时间（ISO 字符串），用于"已是最新"文案里的时间戳。 */
   lastCheckedAt: string | null;
+  /**
+   * 货架清单来源治理留痕，原样转发自 IPC（不在 hook 里做判断，由 UI 决定
+   * 怎么呈现——见 desktop/src/shared/artifact-ota.cjs 的 "dual-source
+   * manifest fetch" 设计注释）。`manifestSource` 是最近一次成功检查采信
+   * 的清单来自产地还是镜像；`manifestReleasedAt` 是该清单自述的签发时间；
+   * `originUnreachable` 标记产地这一轮是否没能参与比较。
+   */
+  manifestSource: 'origin' | 'mirror' | null;
+  manifestReleasedAt: string | null;
+  originUnreachable: boolean;
   /** 当前所处阶段：idle（无事发生）/checking（手动检查中）/downloading/applying。 */
   phase: TrainUpdatePhase;
   /** apply-now 下载阶段的字节进度；不在下载中或没收到过进度事件时为 null。 */
   progress: TrainUpdateProgressState | null;
+  /** 崩溃回退的一次性提示；已 ack 或从未发生过时为 null。 */
+  fallbackNotice: CrashFallbackNotice | null;
   /** 触发一轮手动 OTA 检查（只读清单+验签+过闸门，绝不下载）。 */
   checkNow(): Promise<void>;
   /** 唯一会下载字节的入口：下载→验签→激活→重启 server→重载窗口一条龙。 */
   applyNow(): Promise<{ ok: boolean; error?: string } | undefined>;
+  /** 用户确认崩溃回退提示后调用：清空主进程状态并让卡片消失。 */
+  ackFallbackNotice(): Promise<void>;
 }
 
 interface StatusSnapshot {
@@ -54,6 +68,10 @@ interface StatusSnapshot {
   minShellBlocked: boolean;
   lastError: string | null;
   lastCheckedAt: string | null;
+  manifestSource: 'origin' | 'mirror' | null;
+  manifestReleasedAt: string | null;
+  originUnreachable: boolean;
+  fallbackNotice: CrashFallbackNotice | null;
 }
 
 const IDLE_SNAPSHOT: StatusSnapshot = {
@@ -62,6 +80,10 @@ const IDLE_SNAPSHOT: StatusSnapshot = {
   minShellBlocked: false,
   lastError: null,
   lastCheckedAt: null,
+  manifestSource: null,
+  manifestReleasedAt: null,
+  originUnreachable: false,
+  fallbackNotice: null,
 };
 
 function projectAvailable(available: TrainUpdateAvailable | null | undefined): { version: string } | null {
@@ -75,6 +97,10 @@ function snapshotFromStatus(status: TrainUpdateStatus): StatusSnapshot {
     minShellBlocked: status.minShellBlocked === true,
     lastError: status.lastError ?? null,
     lastCheckedAt: status.lastCheckedAt ?? null,
+    manifestSource: status.manifestSource ?? null,
+    manifestReleasedAt: status.manifestReleasedAt ?? null,
+    originUnreachable: status.originUnreachable === true,
+    fallbackNotice: status.fallbackNotice ?? null,
   };
 }
 
@@ -124,6 +150,16 @@ export function useTrainUpdateState(): UseTrainUpdateStateResult {
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, []);
 
+  // 崩溃回退运行时触发（renderer 崩溃重试路径）的实时广播——冷启动路径
+  // 走上面 queryStatus() 挂载时拉到的 status.fallbackNotice，这里只覆盖
+  // "窗口已经在跑时才发生"的那一种。
+  useEffect(() => {
+    const unsubscribe = window.hana?.onTrainFallbackNotice?.((payload) => {
+      setSnapshot((s) => ({ ...s, fallbackNotice: payload }));
+    });
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+  }, []);
+
   const checkNow = useCallback(async () => {
     setPhase('checking');
     try {
@@ -167,11 +203,23 @@ export function useTrainUpdateState(): UseTrainUpdateStateResult {
     }
   }, []);
 
+  const ackFallbackNotice = useCallback(async () => {
+    // 乐观清空：卡片立即消失，不等 IPC 往返——即便 ack 请求失败，下次挂载
+    // 顶多重新拉到同一条通知，不是数据丢失，不值得为此阻塞交互。
+    setSnapshot((s) => ({ ...s, fallbackNotice: null }));
+    try {
+      await window.hana?.ackTrainFallbackNotice?.();
+    } catch {
+      // best-effort：主进程状态清空失败不影响本次会话里卡片已经消失的事实。
+    }
+  }, []);
+
   return {
     ...snapshot,
     phase,
     progress,
     checkNow,
     applyNow,
+    ackFallbackNotice,
   };
 }

@@ -33,7 +33,7 @@ export async function execute(input) {
 
 ## From Idea To Plugin
 
-Read `.docs/PLUGIN-DEVELOPMENT.md` for the end-to-end workflow. Pick the plugin shape first:
+Pick the plugin shape first, then follow the manifest, runtime, and UI guidance in the sections below:
 
 | Shape | Best for | Permission |
 |------|----------|------------|

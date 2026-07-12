@@ -1,129 +1,130 @@
 {
   "schemaVersion": 1,
-  "tag": "v0.389.0",
-  "version": "0.389.0",
-  "previousTag": "v0.386.6",
-  "generatedAt": "2026-07-11T21:30:47.000Z",
+  "tag": "v0.391.2",
+  "version": "0.391.2",
+  "previousTag": "v0.390.0",
+  "generatedAt": "2026-07-12T06:00:00.000Z",
   "noUserFacingChanges": false,
   "summary": {
-    "zh": "Hana 的组件更新现在完全由用户触发：后台只检查，不会静默下载或改写本地文件；发现更新后，用户可以从更新卡片或关于页开始下载并查看进度。本版同时保护正在使用的版本目录，并改善 Windows 滚动条体验。",
-    "en": "Hana's component updates are now fully user-initiated: background checks no longer download or modify local files, and users can start an available update from the update card or About page while following its progress. This release also protects the active version directory and improves Windows scrollbars."
+    "zh": "本版把自动更新做得更稳、更可感知：Mac 上热更新后服务端不再因签名缺 JIT 权限而启动即崩；检查更新会并行比对产地与镜像并拒绝通道不符的清单；货架内容比本机更旧时不再当成可更新；连续启动失败回退时会明确提示；记忆提醒也只送达所属 Agent 的会话。",
+    "en": "This release makes updates more reliable and visible: macOS hot updates no longer crash the server at launch due to missing JIT entitlements; update checks compare the origin and mirror in parallel and reject channel-mismatched manifests; older shelf content is no longer offered as an update; crash fallbacks surface a clear notice; and memory reminders only reach sessions owned by the source Agent."
   },
   "counts": {
     "feature": 1,
-    "fix": 2,
-    "improvement": 1,
+    "fix": 4,
+    "improvement": 0,
     "migration": 0
   },
   "source": {
     "owner": "liliMozi",
     "repo": "openhanako",
-    "commitRange": "v0.386.6..v0.389.0",
-    "releaseUrl": "https://github.com/liliMozi/openhanako/releases/tag/v0.389.0",
+    "commitRange": "v0.390.0..v0.391.2",
+    "releaseUrl": "https://github.com/liliMozi/openhanako/releases/tag/v0.391.2",
     "releaseNotes": ""
   },
   "items": [
     {
-      "id": "user-initiated-component-updates",
+      "id": "crash-fallback-user-notice",
       "kind": "feature",
       "importance": "high",
       "title": {
-        "zh": "组件更新由用户决定何时开始",
-        "en": "Users decide when component updates begin"
+        "zh": "崩溃回退后明确提示",
+        "en": "Clear notice after a crash fallback"
       },
       "summary": {
-        "zh": "后台和手动检查只确认是否有新内容，不再静默下载或应用；发现更新后，可从更新卡片或关于页主动开始下载，并查看下载、校验和应用进度。",
-        "en": "Background and manual checks now only detect new content instead of silently downloading or applying it. When an update is available, users can start it from the update card or About page and follow download, verification, and application progress."
+        "zh": "连续启动失败触发自动回退时，侧栏会展示一次性提示，说明哪个版本出了问题、已退回哪个版本，以及问题版本已隔离不会自动重试。",
+        "en": "When repeated launch failures trigger an automatic rollback, the sidebar shows a one-time notice explaining which version failed, which version was restored, and that the bad version is quarantined from automatic retry."
       },
-      "details": [
-        {
-          "zh": "重复发布相同内容时会识别为已是最新，临时的 304 响应也不会清掉上一轮记录的更新或错误状态。",
-          "en": "Re-published identical content is recognized as already current, while a temporary 304 response no longer clears the previously recorded update or error state."
-        }
-      ],
+      "details": [],
       "sources": [
         {
           "type": "commit",
-          "ref": "074584a22",
-          "title": "feat(update): 自动更新只检查不下载，下载与应用改为用户点击触发"
-        },
-        {
-          "type": "commit",
-          "ref": "v0.389.0",
-          "title": "feat(update): 更新卡片按内容更新语义呈现，版本显示统一到已激活内容"
+          "ref": "367dd3b22",
+          "title": "feat(update): 崩溃回退后向用户明确提示"
         }
       ]
     },
     {
-      "id": "atomic-protected-update-activation",
+      "id": "macos-server-jit-entitlement",
       "kind": "fix",
       "importance": "high",
       "title": {
-        "zh": "更新不再破坏正在使用的版本",
-        "en": "Updates no longer damage the active version"
+        "zh": "修复 Mac 热更新服务端启动即崩",
+        "en": "Fix macOS hot-update server crashing on launch"
       },
       "summary": {
-        "zh": "新内容会先在临时目录中完整解压并校验，再原子替换旧目录；仍被任一更新通道引用的版本目录会受到保护，失败时保留原有可用内容。",
-        "en": "New content is now fully extracted and verified in a temporary directory before atomically replacing the old one. Version directories still referenced by any update channel are protected, preserving the working installation when activation fails."
+        "zh": "箱内 Node 在正式签名时会附带 JIT 权限，并在装箱前做一次启动烟测，避免缺少可执行内存权限导致热更新后服务端立刻崩溃。",
+        "en": "The bundled Node binary now receives JIT entitlements during Developer ID signing, with a pre-pack launch smoke test so a missing executable-memory entitlement can no longer crash the server right after a hot update."
       },
-      "details": [
-        {
-          "zh": "如果新列车复用相同目录名且内容一致，Hana 会直接沿用现有目录；内容不一致时会明确拒绝覆盖。",
-          "en": "If a new train reuses the same directory name with identical content, Hana reuses the existing directory; conflicting content is rejected instead of overwriting it."
-        }
-      ],
+      "details": [],
       "sources": [
         {
           "type": "commit",
-          "ref": "2d765fc88",
-          "title": "fix(update): stop deleting the live version dir before the new one is ready"
+          "ref": "fc5d17360",
+          "title": "fix(build): macOS server 箱内 node 缺 JIT entitlement 导致启动即崩"
         }
       ]
     },
     {
-      "id": "active-content-version-display",
+      "id": "dual-source-channel-manifest-checks",
+      "kind": "fix",
+      "importance": "high",
+      "title": {
+        "zh": "更新清单双源比对与通道校验",
+        "en": "Dual-source update manifests with channel checks"
+      },
+      "summary": {
+        "zh": "检查更新会并行请求 GitHub 与 AtomGit，两边独立验签后采信车号更新的一方；清单自述通道与请求通道不符时直接拒绝，避免镜像滞后或错通道清单被照单全收。",
+        "en": "Update checks now query GitHub and AtomGit in parallel, independently verify signatures, and prefer the newer train. Manifests whose declared channel does not match the requested channel are rejected instead of being accepted blindly."
+      },
+      "details": [],
+      "sources": [
+        {
+          "type": "commit",
+          "ref": "7213d3494",
+          "title": "fix(update): 校验清单通道归属，清单获取改为双源并行、采信车号更新的一方"
+        }
+      ]
+    },
+    {
+      "id": "reject-older-shelf-content",
       "kind": "fix",
       "importance": "medium",
       "title": {
-        "zh": "版本显示与当前内容保持一致",
-        "en": "Displayed versions match the active content"
+        "zh": "更旧的货架内容不再当成更新",
+        "en": "Older shelf content is no longer treated as an update"
       },
       "summary": {
-        "zh": "更新卡片、关于页和升级公告现在统一显示当前已激活内容的版本，避免应用外壳版本与实际界面、服务内容不一致。",
-        "en": "The update card, About page, and post-update announcement now consistently show the active content version, avoiding mismatches between the application shell and the interface or server content in use."
+        "zh": "当货架内容版本低于本机已激活版本时，检查与下载都会视为已是最新，避免把实际上更旧的列车当成可更新并造成误降级。",
+        "en": "If shelf content is older than the locally active version, both check and download now treat the install as current, preventing an older train from being offered as an update and applied as a downgrade."
       },
       "details": [],
       "sources": [
         {
           "type": "commit",
-          "ref": "v0.389.0",
-          "title": "feat(update): 更新卡片按内容更新语义呈现，版本显示统一到已激活内容"
+          "ref": "82330a386",
+          "title": "fix(update): 货架内容版本低于本机时不再被当作可用更新"
         }
       ]
     },
     {
-      "id": "windows-scrollbar-polish",
-      "kind": "improvement",
+      "id": "memory-reminder-agent-scope",
+      "kind": "fix",
       "importance": "medium",
       "title": {
-        "zh": "Windows 滚动条更安静",
-        "en": "Quieter Windows scrollbars"
+        "zh": "记忆提醒只送达所属 Agent",
+        "en": "Memory reminders stay on the owning Agent"
       },
       "summary": {
-        "zh": "Windows 滚动条在停止滚动后自动隐藏，并移除原生箭头按钮，让桌面界面更简洁；macOS、Linux 与网页版行为不变。",
-        "en": "Windows scrollbar thumbs now hide after scrolling stops, and native arrow buttons have been removed for a cleaner desktop interface. macOS, Linux, and web behavior is unchanged."
+        "zh": "记忆事实变更现在只注入来源 Agent 自己的会话，不再广播到其它 Agent 的会话。",
+        "en": "Memory fact changes are now injected only into sessions owned by the source Agent, instead of being broadcast to every Agent's sessions."
       },
       "details": [],
       "sources": [
         {
           "type": "commit",
-          "ref": "ab70ee510",
-          "title": "feat(ui): auto-hide Windows scrollbars while idle"
-        },
-        {
-          "type": "commit",
-          "ref": "437230181",
-          "title": "fix(ui): remove Windows scrollbar arrow buttons"
+          "ref": "33af92e1b",
+          "title": "fix(reminder): scope memory facts to owning agent"
         }
       ]
     }

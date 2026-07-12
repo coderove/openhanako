@@ -33,7 +33,7 @@ export async function execute(input) {
 
 ## 从想法到插件
 
-完整实操流程见 `.docs/PLUGIN-DEVELOPMENT.md`。开发时先选插件形态：
+开发时先选插件形态，再按本页后续章节配置清单、运行时能力与界面：
 
 | 形态 | 适合什么 | 权限 |
 |------|----------|------|

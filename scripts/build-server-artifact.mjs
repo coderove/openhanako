@@ -55,6 +55,7 @@ const ustar = require("../shared/artifact-core/ustar.cjs");
 const activation = require("../shared/artifact-core/activation.cjs");
 const manifestModule = require("../shared/artifact-core/manifest.cjs");
 const { loadPinnedKeyset } = require("../shared/artifact-core/keyset.cjs");
+const { PRELOAD_API_VERSION, SERVER_PROTOCOL_VERSION } = require("../shared/contract-versions.cjs");
 
 export const SEED_MANIFEST_NAME = "seed-train.json";
 
@@ -117,27 +118,39 @@ export function findMachOFiles(rootDir) {
 /**
  * 组装单个文件的 codesign 参数（纯函数，供测试逐一断言）。双模式：
  * - identity 未设/为空 → ad-hoc `--sign - --force`（本地 install:local 现状，
- *   与 scripts/sign-local.cjs 同款，一字不变）。
- * - identity 非空 → Developer ID 正式签名。参数规格照抄 CI 里跑过公证的
- *   旧 "Pre-sign server binaries" 步骤（fe8677824 起实证可过 notarization）：
- *   identity + `--timestamp`（secure timestamp）+ `--force`（幂等重签）；
- *   `.node` addon 不加 hardened runtime，其余 Mach-O（node 可执行、
- *   spawn-helper 等）加 `--options runtime`。不加 `--entitlements` /
- *   `--keychain` —— 原实证流程没有，不凭空引入（identity 解析走 CI 已设好
- *   的 keychain 搜索列表，见 build.yml "Setup macOS signing keychain"）。
- * @param {{identity?: string, file: string}} opts
+ *   与 scripts/sign-local.cjs 同款，一字不变）。ad-hoc 不加 hardened runtime，
+ *   因此也不需要 entitlements。
+ * - identity 非空 → Developer ID 正式签名：identity + `--timestamp`
+ *   （secure timestamp）+ `--force`（幂等重签）；`.node` addon 不加 hardened
+ *   runtime，其余 Mach-O（node 可执行、spawn-helper 等）加 `--options runtime`，
+ *   并且**必须**同时加 `--entitlements <entitlementsPath>`——arm64 macOS 严格
+ *   执行 W^X，hardened runtime 二进制缺 com.apple.security.cs.allow-jit 时
+ *   V8 无法申请可执行内存，node 启动即死于 CodeRange 虚拟内存保留失败。
+ *   历史上这里"照抄旧实证流程、不加 entitlements"，产出的箱子能过公证但
+ *   在 arm64 上完全无法运行；所以现在 hardened runtime 而 entitlementsPath
+ *   缺失直接硬报错，禁止静默签出一个必然崩溃的二进制。
+ *   不加 `--keychain`（identity 解析走 CI 已设好的 keychain 搜索列表，
+ *   见 build.yml "Setup macOS signing keychain"）。
+ * @param {{identity?: string, file: string, entitlementsPath?: string}} opts
  * @returns {string[]} codesign 的完整参数数组
  */
-export function buildCodesignArgs({ identity, file }) {
+export function buildCodesignArgs({ identity, file, entitlementsPath }) {
   if (!identity) {
     return ["--sign", "-", "--force", file];
   }
   const hardenedRuntime = !file.endsWith(".node");
+  if (hardenedRuntime && !entitlementsPath) {
+    throw new Error(
+      `[build-server] refusing to sign ${file} with hardened runtime but no entitlements file. `
+        + "A runtime-flagged binary without com.apple.security.cs.allow-jit cannot start V8 on "
+        + "arm64 macOS (CodeRange OOM crash at launch); pass entitlementsPath.",
+    );
+  }
   return [
     "--sign", identity,
     "--timestamp",
     "--force",
-    ...(hardenedRuntime ? ["--options", "runtime"] : []),
+    ...(hardenedRuntime ? ["--options", "runtime", "--entitlements", entitlementsPath] : []),
     file,
   ];
 }
@@ -153,12 +166,60 @@ export function buildCodesignArgs({ identity, file }) {
  */
 async function defaultSignMachOFiles(outDir, log, env = process.env) {
   const identity = env.HANA_MACHO_SIGN_IDENTITY;
+  // Developer ID 模式下 hardened runtime 文件必须携带 JIT entitlements
+  //（缺了它 node 在 arm64 上启动即崩，见 buildCodesignArgs 注释）。plist
+  // 缺失必须硬报错——静默退回"无 entitlements 签名"正是当初的事故。
+  let entitlementsPath;
+  if (identity) {
+    entitlementsPath = path.join(ROOT, "build", "server-macho-entitlements.plist");
+    if (!fs.existsSync(entitlementsPath)) {
+      throw new Error(
+        `[build-server] server Mach-O entitlements plist missing: ${entitlementsPath}. `
+          + "Developer ID signing requires it (hardened runtime without allow-jit produces a "
+          + "binary that crashes at launch on arm64 macOS); refusing to sign without it.",
+      );
+    }
+  }
   const machoFiles = findMachOFiles(outDir);
   for (const file of machoFiles) {
-    execFileSync("codesign", buildCodesignArgs({ identity, file }), { stdio: "pipe" });
+    execFileSync("codesign", buildCodesignArgs({ identity, file, entitlementsPath }), { stdio: "pipe" });
   }
   const mode = identity ? "Developer ID (HANA_MACHO_SIGN_IDENTITY)" : "ad-hoc";
   log(`[build-server] seed: ${mode} signed ${machoFiles.length} Mach-O file(s) before packing`);
+}
+
+/**
+ * 装箱前启动烟测（darwin）：实际运行一次树内签好名的 node 二进制，证明它
+ * 能活着走完进程启动（V8 初始化会立刻暴露签名/entitlements 问题——缺
+ * allow-jit 的 hardened 二进制在 arm64 上此刻就崩）。任何非零退出、信号、
+ * spawn 失败都硬报错中止装箱：签坏的二进制永远不该进归档、上货架。
+ *
+ * 跨架构说明：CI 在 arm64 runner 上也构建 x64 箱子，这一步会经 Rosetta
+ * 执行 x64 node——照跑，不做"跑不了就跳过"的分支（GitHub 的 macOS runner
+ * 带 Rosetta；真跑不了就该 CI 红，人来处理，而不是放一个没验证过的箱子过去）。
+ * @param {string} outDir - server 产出树根目录（node 二进制位于 `<outDir>/node`，
+ *   与 build-server.mjs 复制 runtime 的落点一致）
+ * @param {(msg: string) => void} log
+ */
+async function defaultSmokeTestNodeStartup(outDir, log) {
+  const nodeBin = path.join(outDir, "node");
+  try {
+    execFileSync(nodeBin, ["-e", "process.exit(0)"], { stdio: "pipe", timeout: 30_000 });
+  } catch (err) {
+    const stderr = err?.stderr ? String(err.stderr).trim().slice(0, 2000) : "";
+    const detail = err?.signal
+      ? `killed by signal ${err.signal}`
+      : err?.status != null
+        ? `exit code ${err.status}`
+        : `spawn failed: ${err?.message ?? err}`;
+    throw new Error(
+      `[build-server] signed node binary failed its startup smoke test (${detail}): ${nodeBin}. `
+        + "Refusing to pack a binary that cannot start — this is exactly how a broken signature "
+        + "(e.g. hardened runtime without JIT entitlements) would otherwise reach the shelf."
+        + (stderr ? `\nstderr: ${stderr}` : ""),
+    );
+  }
+  log("[build-server] seed: signed node binary passed the startup smoke test");
 }
 
 /**
@@ -236,6 +297,7 @@ function requireSignKeyPath(env) {
  *   log?: (msg: string) => void,
  *   deps?: {
  *     signMachOFiles?: (outDir: string, log: (msg: string) => void, env: NodeJS.ProcessEnv | Record<string, string | undefined>) => Promise<void>,
+ *     smokeTestNodeStartup?: (outDir: string, log: (msg: string) => void) => Promise<void>,
  *     packTree?: (srcDir: string, archivePath: string) => Promise<void>,
  *     sha256File?: (filePath: string) => Promise<string>,
  *     statSize?: (filePath: string) => number,
@@ -246,6 +308,7 @@ function requireSignKeyPath(env) {
 export async function packServerArchive({ outDir, artifactOutDir, version, platform, arch, env = process.env, log = console.log, deps = {} }) {
   const {
     signMachOFiles = defaultSignMachOFiles,
+    smokeTestNodeStartup = defaultSmokeTestNodeStartup,
     packTree = ustar.packTree,
     sha256File = activation.sha256File,
     statSize = (filePath) => fs.statSync(filePath).size,
@@ -257,6 +320,9 @@ export async function packServerArchive({ outDir, artifactOutDir, version, platf
   // 决定 ad-hoc / Developer ID 双模式，见 defaultSignMachOFiles。
   if (platform === "darwin") {
     await signMachOFiles(outDir, log, env);
+    // ── 签完立刻启动烟测：实际跑一次签好名的 node，签坏的二进制在这里
+    // 就地报错中止装箱，永远到不了货架（见 defaultSmokeTestNodeStartup）──
+    await smokeTestNodeStartup(outDir, log);
   }
 
   // ── 后装箱：干净目录，绝不让上一次构建的残留文件混进这次的 seed ──
@@ -331,10 +397,81 @@ export async function packRendererArtifact({ rendererDistDir, artifactOutDir, ve
 }
 
 /**
+ * 复用 CI 单点构建好的 renderer 归档字节，而不是在当前 job 里现场打包。
+ *
+ * 背景：renderer 归档（desktop/dist-renderer/ 树）是纯 web 静态资源，构建结果
+ * 平台无关。但 packTree 在 tar 头里写入真实文件 mtime，四个平台 runner 各自
+ * 现场打包会产生"内容相同、字节不同、sha256 不同"的四份归档——GitHub Release
+ * 上只发布其中一份（mac-arm64），而每个安装包里内嵌的种子却是各自 runner
+ * 自己那份，导致"全新安装后本地种子哈希与货架永远不一致"的生产事故。
+ *
+ * 修法：由独立 CI job 打包一次，四个平台 job 下载同一份字节复用，而不是各自
+ * 现场打包。这个函数只做"接过一份已经打好的箱子，量出它的哈希/体积，搬到
+ * 该搬的地方"——不做任何裁剪或改写，也绝不允许把内容跟版本号对不上的箱子
+ * 悄悄放行（文件名必须与传入的 version 精确匹配 renderer-<version>.tar.gz）。
+ * @param {{
+ *   archivePath: string,
+ *   rendererArtifactOutDir: string,
+ *   version: string,
+ *   log?: (msg: string) => void,
+ *   deps?: {
+ *     sha256File?: (filePath: string) => Promise<string>,
+ *     statSize?: (filePath: string) => number,
+ *   },
+ * }} opts
+ * @returns {Promise<{archivePath: string, archiveName: string, sha256: string, size: number}>}
+ */
+async function usePrebuiltRendererArchive({ archivePath, rendererArtifactOutDir, version, log = console.log, deps = {} }) {
+  const {
+    sha256File = activation.sha256File,
+    statSize = (filePath) => fs.statSync(filePath).size,
+  } = deps;
+
+  if (!fs.existsSync(archivePath)) {
+    throw new Error(
+      `[build-server] prebuilt renderer archive path invalid: ${archivePath} does not exist. `
+        + "HANA_PREBUILT_RENDERER_BOX (or the prebuiltRendererArchive option) must point at the renderer "
+        + "box produced by the shared CI job (see scripts/pack-renderer-box.mjs).",
+    );
+  }
+
+  const expectedName = `renderer-${version}.tar.gz`;
+  const actualName = path.basename(archivePath);
+  if (actualName !== expectedName) {
+    throw new Error(
+      `[build-server] prebuilt renderer archive name mismatch: expected "${expectedName}" `
+        + `(matching build version ${version}), got "${actualName}". Refusing to pack a renderer box `
+        + "built for a different version — this guards against a stale/mismatched shared artifact "
+        + "silently ending up inside this platform's seed.",
+    );
+  }
+
+  fs.mkdirSync(rendererArtifactOutDir, { recursive: true });
+  // 清掉上一次构建残留的旧归档（与 packRendererArtifact 的清理承诺一致），
+  // 但绝不删掉源文件本身——CI 里源文件通常在下载目录，跟这里是两个目录，
+  // 但本地手跑时调用方可能就地传入已经躺在 rendererArtifactOutDir 里的文件。
+  for (const entry of fs.readdirSync(rendererArtifactOutDir)) {
+    const entryPath = path.join(rendererArtifactOutDir, entry);
+    if (path.resolve(entryPath) === path.resolve(archivePath)) continue;
+    fs.rmSync(entryPath, { recursive: true, force: true });
+  }
+  const destPath = path.join(rendererArtifactOutDir, actualName);
+  if (path.resolve(destPath) !== path.resolve(archivePath)) {
+    fs.copyFileSync(archivePath, destPath);
+  }
+
+  const sha256 = await sha256File(destPath);
+  const size = statSize(destPath);
+  log(`[build-server] seed: reusing prebuilt ${actualName} (sha256=${sha256.slice(0, 12)}…) → ${rendererArtifactOutDir}`);
+  return { archivePath: destPath, archiveName: actualName, sha256, size };
+}
+
+/**
  * schema-1 seed train manifest，双 kind：同时携带
  * artifacts.renderer 与 artifacts.server（启用双 artifact 管线后，安装包不再只带
- * server，renderer 也已拆出 asar）。兼容基线取 1/1；renderer 加载层
- * （hana-app:// 等）落地时接管真实常量。
+ * server，renderer 也已拆出 asar）。contract.{preload,serverProtocol} 取自
+ * shared/contract-versions.cjs 这个唯一常量源（种子与之后 publish-train 组装的
+ * 正式列车共用同一份值），不在这里维护字面量副本。
  * @param {{version: string, platform: string, arch: string, keyId: string, releasedAt: string,
  *          renderer: {sha256: string, size: number, archiveName: string},
  *          server: {sha256: string, size: number, archiveName: string}}} opts
@@ -347,7 +484,7 @@ export function buildSeedManifest({ version, platform, arch, keyId, releasedAt, 
     releasedAt,
     keyId,
     minShell: version,
-    contract: { preload: 1, serverProtocol: 1 },
+    contract: { preload: PRELOAD_API_VERSION, serverProtocol: SERVER_PROTOCOL_VERSION },
     urgent: false,
     rollout: { percent: 100, salt: "seed" },
     artifacts: {
@@ -384,6 +521,7 @@ export function buildSeedManifest({ version, platform, arch, keyId, releasedAt, 
  *     signManifestFile?: (opts: {manifestPath: string, signKeyPath: string}) => void,
  *     verifyManifest?: (manifestBytes: Buffer, sigBytes: Buffer, keyset: unknown[]) => object,
  *   },
+ *   prebuiltRendererArchive?: string,
  * }} opts
  * @returns {Promise<{serverArchivePath: string, rendererArchivePath: string,
  *                    manifestPath: string, sigPath: string, manifest: object}>}
@@ -399,6 +537,13 @@ export async function packDualKindSeed({
   env = process.env,
   log = console.log,
   deps = {},
+  // CI 的四个平台 job 各自现场打包 renderer 树会产生同内容不同字节的四份
+  // 归档（tar 头里的 mtime 不同），而发布货架只上传其中一份。设置这个参数
+  // （或环境变量 HANA_PREBUILT_RENDERER_BOX）指向共享 job 已经打好的箱子，
+  // 就跳过现场打包，直接复用那份字节——四个平台安装包内嵌的种子从此和货架
+  // 上的归档字节完全一致。留空（本地开发者手跑 / 未设置该环境变量）时行为
+  // 与过去完全一致：现场从 rendererDistDir 打包。
+  prebuiltRendererArchive = env.HANA_PREBUILT_RENDERER_BOX || undefined,
 }) {
   const { signManifestFile = defaultSignManifestFile, verifyManifest = manifestModule.verifyManifest } = deps;
 
@@ -411,13 +556,21 @@ export async function packDualKindSeed({
 
   // ── 两个归档都打完 ──
   const serverPack = await packServerArchive({ outDir, artifactOutDir, version, platform, arch, env, log, deps });
-  const rendererPackShared = await packRendererArtifact({
-    rendererDistDir,
-    artifactOutDir: rendererArtifactOutDir,
-    version,
-    log,
-    deps,
-  });
+  const rendererPackShared = prebuiltRendererArchive
+    ? await usePrebuiltRendererArchive({
+        archivePath: prebuiltRendererArchive,
+        rendererArtifactOutDir,
+        version,
+        log,
+        deps,
+      })
+    : await packRendererArtifact({
+        rendererDistDir,
+        artifactOutDir: rendererArtifactOutDir,
+        version,
+        log,
+        deps,
+      });
   // renderer 归档平台无关，先落共享目录（dist-renderer-artifact/），再复制一份
   // 进这次构建的 per-platform seed 目录，跟 server 归档同箱（extraResources
   // 按 ${os}-${arch} 取整个目录）。

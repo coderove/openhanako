@@ -79,6 +79,21 @@ export interface TrainUpdateAvailable {
 }
 
 /**
+ * 崩溃回退的一次性用户提示：连续 3 次启动/加载失败触发自动 demote +
+ * 隔离后，desktop/main.cjs 构造的载荷——`kind` 标识是 server 还是
+ * renderer 侧触发的（两者各自独立三连败计数），`fromVersion`/`toVersion`
+ * 只在这次事件真实发生时非 null（数据来自指针文件本来就有的 version
+ * 字段，见 desktop/src/shared/artifact-boot.cjs 对 crashFallback 语义的
+ * 注释）。
+ */
+export interface CrashFallbackNotice {
+  kind: 'server' | 'renderer';
+  fromVersion: string | null;
+  toVersion: string | null;
+  quarantinedTrain: number | null;
+}
+
+/**
  * IPC 返回形状（train-update-status）：`staged` 反映的仍是"两个 next 指针是否
  * 都已写好、可以立即 promote"（下载与激活由用户点击 apply 触发，参见
  * `train-update-apply`），但表盘 UI（`useTrainUpdateState` 往上的一切
@@ -98,6 +113,20 @@ export interface TrainUpdateStatus {
   lastError?: string | null;
   lastCheckedAt?: string | null;
   currentVersion: string;
+  /** 冷启动拉取通道：窗口挂载时若崩溃回退事件仍未被 ack，这里非 null。 */
+  fallbackNotice?: CrashFallbackNotice | null;
+  /**
+   * 货架清单来源治理留痕（中性展示，不设阈值告警）：`manifestSource` 是
+   * 最近一次成功检查里被采信的那份清单来自 "origin"（GitHub，发布产地）
+   * 还是 "mirror"（AtomGit，加速镜像）；`manifestReleasedAt` 是该清单自述
+   * 的签发时间（ISO 字符串）；`originUnreachable` 标记产地这一轮是否没能
+   * 参与比较（无论最终采信哪一份）——设置页仅在这个布尔为真时追加"经备用
+   * 源"标注。三者都可能是 null/false（从未成功检查过，或老版本升级上来
+   * 的 ota-state.json 没有这些字段）。
+   */
+  manifestSource?: 'origin' | 'mirror' | null;
+  manifestReleasedAt?: string | null;
+  originUnreachable?: boolean;
 }
 
 /** train-update-apply 下载阶段的进度事件（train-update-progress IPC 广播） */
@@ -576,6 +605,10 @@ export interface PlatformApi {
   onTrainUpdateAvailable?(callback: (payload: { version: string; minShellBlocked: boolean }) => void): (() => void) | void;
   /** train-update-apply 下载/校验/激活阶段的进度推送，只发给发起该次 apply 的窗口。 */
   onTrainUpdateProgress?(callback: (progress: TrainUpdateProgress) => void): (() => void) | void;
+  /** 崩溃回退运行时触发（renderer 崩溃重试路径）时的实时广播；冷启动路径见 train-update-status 的 fallbackNotice 字段。 */
+  onTrainFallbackNotice?(callback: (payload: CrashFallbackNotice) => void): (() => void) | void;
+  /** 用户点掉崩溃回退提示卡片后调用，清空主进程内存里的一次性状态。 */
+  ackTrainFallbackNotice?(): Promise<{ ok: boolean }>;
   /** 关于页更新历史：在线最近五个已发布版本；网络失败时显式返回包内备份来源。 */
   getUpdateDigestHistory?(): Promise<UpdateDigestHistoryResult>;
   getAutoLaunchStatus?(): Promise<AutoLaunchStatus>;

@@ -7,7 +7,7 @@ import { loadMessages, pendingNewSessionIdentityPatch } from '../stores/session-
 import { connectWebSocket, getWebSocket } from '../services/websocket';
 import { configureAppEventActions } from '../services/app-event-actions';
 import { configureWsMessageHandler } from '../services/ws-message-handler';
-import { createBrowserServerConnection, upsertServerConnection, type ServerIdentity } from '../services/server-connection';
+import { createBrowserServerConnection, upsertServerConnection, warnIfServerProtocolMismatch, type ServerIdentity } from '../services/server-connection';
 import { loadModels } from '../utils/ui-helpers';
 import { applySyncedAppearancePreferences, type SyncedAppearancePreferences } from '../services/appearance-sync';
 import { applyChatLayout } from '../chat/layout';
@@ -67,6 +67,7 @@ export async function initializeMobileRuntime(principal: MobilePrincipal): Promi
   configureMobileMessageHandlers();
 
   const identity = await rawJson<ServerIdentity>('/api/server/identity');
+  warnIfServerProtocolMismatch(identity);
   const connection = createBrowserServerConnection({
     identity,
     principal,

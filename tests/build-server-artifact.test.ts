@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync } from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -89,25 +90,57 @@ describe("build-server-artifact: buildCodesignArgs (darwin in-seed signing spec)
     ]);
   });
 
-  it("signs executables (non-.node Mach-O) with Developer ID + hardened runtime + secure timestamp", () => {
-    const args = buildCodesignArgs({ identity: "ABCDEF0123456789", file: "/tree/node" });
+  it("signs executables (non-.node Mach-O) with Developer ID + hardened runtime + secure timestamp + JIT entitlements", () => {
+    const args = buildCodesignArgs({
+      identity: "ABCDEF0123456789",
+      file: "/tree/node",
+      entitlementsPath: "/repo/build/server-macho-entitlements.plist",
+    });
     expect(args).toEqual([
-      "--sign", "ABCDEF0123456789", "--timestamp", "--force", "--options", "runtime", "/tree/node",
+      "--sign", "ABCDEF0123456789", "--timestamp", "--force",
+      "--options", "runtime",
+      "--entitlements", "/repo/build/server-macho-entitlements.plist",
+      "/tree/node",
     ]);
   });
 
-  it("signs .node addons with Developer ID + secure timestamp but WITHOUT hardened runtime (matches the proven pre-sign CI spec)", () => {
-    const args = buildCodesignArgs({ identity: "ABCDEF0123456789", file: "/tree/node_modules/x/build/addon.node" });
+  it("signs .node addons with Developer ID + secure timestamp but WITHOUT hardened runtime or entitlements (matches the proven pre-sign CI spec)", () => {
+    const args = buildCodesignArgs({
+      identity: "ABCDEF0123456789",
+      file: "/tree/node_modules/x/build/addon.node",
+      entitlementsPath: "/repo/build/server-macho-entitlements.plist",
+    });
     expect(args).toEqual([
       "--sign", "ABCDEF0123456789", "--timestamp", "--force", "/tree/node_modules/x/build/addon.node",
     ]);
     expect(args).not.toContain("runtime");
+    expect(args).not.toContain("--entitlements");
   });
 
-  it("never injects entitlements or keychain flags (not part of the proven notarized spec)", () => {
-    const args = buildCodesignArgs({ identity: "ABCDEF0123456789", file: "/tree/node" });
-    expect(args).not.toContain("--entitlements");
+  it("hard-errors when hardened runtime is requested without an entitlements file (a runtime-flagged binary without allow-jit is exactly the arm64 startup-crash incident)", () => {
+    expect(() => buildCodesignArgs({ identity: "ABCDEF0123456789", file: "/tree/node" })).toThrow(
+      /entitlements/i,
+    );
+  });
+
+  it("never injects keychain flags (not part of the proven notarized spec); ad-hoc mode carries no entitlements", () => {
+    const args = buildCodesignArgs({
+      identity: "ABCDEF0123456789",
+      file: "/tree/node",
+      entitlementsPath: "/repo/build/server-macho-entitlements.plist",
+    });
     expect(args).not.toContain("--keychain");
+    const adhoc = buildCodesignArgs({ identity: undefined, file: "/tree/node", entitlementsPath: "/repo/build/server-macho-entitlements.plist" });
+    expect(adhoc).toEqual(["--sign", "-", "--force", "/tree/node"]);
+  });
+
+  it("repo ships the server Mach-O entitlements plist with the JIT allowances V8 needs on arm64", () => {
+    const plistPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "build", "server-macho-entitlements.plist");
+    expect(fs.existsSync(plistPath)).toBe(true);
+    const plist = fs.readFileSync(plistPath, "utf8");
+    expect(plist).toContain("com.apple.security.cs.allow-jit");
+    expect(plist).toContain("com.apple.security.cs.allow-unsigned-executable-memory");
+    expect(plist).toContain("com.apple.security.cs.allow-dyld-environment-variables");
   });
 });
 
@@ -139,6 +172,20 @@ describe("build-server-artifact: dual-kind seed manifest shape", () => {
       size: 123,
       path: "server-0.381.0-darwin-arm64.tar.gz",
     });
+  });
+
+  it("stamps contract.{preload,serverProtocol} from the single shared constants module, not a private literal copy", async () => {
+    const { PRELOAD_API_VERSION, SERVER_PROTOCOL_VERSION } = await import("../shared/contract-versions.cjs");
+    const manifest = buildSeedManifest({
+      version: "0.381.0",
+      platform: "darwin",
+      arch: "arm64",
+      keyId: "2026a",
+      releasedAt: "2026-07-11T00:00:00.000Z",
+      renderer: { sha256: "b".repeat(64), size: 456, archiveName: "renderer-0.381.0.tar.gz" },
+      server: { sha256: "a".repeat(64), size: 123, archiveName: "server-0.381.0-darwin-arm64.tar.gz" },
+    });
+    expect(manifest.contract).toEqual({ preload: PRELOAD_API_VERSION, serverProtocol: SERVER_PROTOCOL_VERSION });
   });
 });
 
@@ -180,7 +227,7 @@ describe("build-server-artifact: packServerArchive (pack-only, no manifest)", ()
     expect(fs.existsSync(path.join(artifactOutDir, "seed-train.json"))).toBe(false);
   });
 
-  it("signs Mach-O binaries BEFORE packing on darwin (sign first, pack second)", async () => {
+  it("signs Mach-O binaries BEFORE the startup smoke test, and smoke-tests BEFORE packing on darwin (sign, smoke, pack)", async () => {
     const root = makeTempDir("hana-pack-server-");
     const outDir = makeServerTree(root);
     const order: string[] = [];
@@ -195,6 +242,9 @@ describe("build-server-artifact: packServerArchive (pack-only, no manifest)", ()
         signMachOFiles: async () => {
           order.push("sign");
         },
+        smokeTestNodeStartup: async () => {
+          order.push("smoke");
+        },
         packTree: async () => {
           order.push("pack");
         },
@@ -202,7 +252,58 @@ describe("build-server-artifact: packServerArchive (pack-only, no manifest)", ()
         statSize: () => 1,
       },
     });
-    expect(order).toEqual(["sign", "pack"]);
+    expect(order).toEqual(["sign", "smoke", "pack"]);
+  });
+
+  it("aborts packing with a readable error when the signed node binary fails its startup smoke test", async () => {
+    const root = makeTempDir("hana-pack-server-");
+    const outDir = makeServerTree(root);
+    let packCalled = false;
+    await expect(
+      packServerArchive({
+        outDir,
+        artifactOutDir: path.join(root, "artifact"),
+        version: "0.381.0",
+        platform: "darwin",
+        arch: "arm64",
+        log: () => {},
+        deps: {
+          signMachOFiles: async () => {},
+          smokeTestNodeStartup: async () => {
+            throw new Error(
+              "[build-server] signed node binary failed its startup smoke test (exit signal SIGTRAP): "
+                + "Fatal process out of memory: Failed to reserve virtual memory for CodeRange",
+            );
+          },
+          packTree: async () => {
+            packCalled = true;
+          },
+          sha256File: async () => "e".repeat(64),
+          statSize: () => 1,
+        },
+      }),
+    ).rejects.toThrow(/startup smoke test/);
+    expect(packCalled).toBe(false);
+  });
+
+  it("does not run the node startup smoke test for non-darwin targets", async () => {
+    const root = makeTempDir("hana-pack-server-");
+    const outDir = makeServerTree(root);
+    let smokeCalled = false;
+    await packServerArchive({
+      outDir,
+      artifactOutDir: path.join(root, "artifact"),
+      version: "0.381.0",
+      platform: "linux",
+      arch: "x64",
+      log: () => {},
+      deps: {
+        smokeTestNodeStartup: async () => {
+          smokeCalled = true;
+        },
+      },
+    });
+    expect(smokeCalled).toBe(false);
   });
 
   it("passes env down to the darwin signer so HANA_MACHO_SIGN_IDENTITY reaches it (no process.env grabbing)", async () => {
@@ -221,6 +322,7 @@ describe("build-server-artifact: packServerArchive (pack-only, no manifest)", ()
         signMachOFiles: async (_outDir: string, _log: (msg: string) => void, env: unknown) => {
           seenEnv = env;
         },
+        smokeTestNodeStartup: async () => {},
         packTree: async () => {},
         sha256File: async () => "e".repeat(64),
         statSize: () => 1,
@@ -401,5 +503,126 @@ describe("build-server-artifact: packDualKindSeed guards and ordering", () => {
     await expect(
       packDualKindSeed({ ...opts, env: { HANA_SIGN_KEY: keyPath, HANA_SIGN_KEYSET: keysetPath } }),
     ).rejects.toThrow(/renderer dist dir not found/);
+  });
+});
+
+describe("build-server-artifact: packDualKindSeed prebuilt renderer archive reuse (CI single-source box)", () => {
+  function baseOpts(root: string) {
+    return {
+      outDir: makeServerTree(root),
+      rendererDistDir: makeRendererTree(root),
+      rendererArtifactOutDir: path.join(root, "dist-renderer-artifact"),
+      artifactOutDir: path.join(root, "dist-server-artifact", "mac-arm64"),
+      version: "0.381.0",
+      platform: "linux",
+      arch: "x64",
+      log: () => {},
+    };
+  }
+
+  /** Packs a standalone renderer box, standing in for the shared CI job's output. */
+  async function packSharedRendererBox(root: string, version = "0.381.0") {
+    const sharedSourceDir = path.join(root, "shared-source-renderer");
+    fs.mkdirSync(path.join(sharedSourceDir, "assets"), { recursive: true });
+    fs.writeFileSync(path.join(sharedSourceDir, "index.html"), "<!doctype html><html></html>\n");
+    fs.writeFileSync(path.join(sharedSourceDir, "assets", "index.js"), "console.log('shared renderer');\n");
+    return packRendererArtifact({
+      rendererDistDir: sharedSourceDir,
+      artifactOutDir: path.join(root, "shared-renderer-box"),
+      version,
+      log: () => {},
+    });
+  }
+
+  it("reuses a prebuilt renderer archive instead of packing rendererDistDir on the spot", async () => {
+    const root = makeTempDir("hana-dual-prebuilt-");
+    const { keyPath, keysetPath } = makeKeypairFiles(root);
+    const prebuilt = await packSharedRendererBox(root);
+
+    const opts = {
+      outDir: makeServerTree(root),
+      // Deliberately missing: if packDualKindSeed still tried to pack this on the spot
+      // (i.e. the prebuilt path were NOT honored), packRendererArtifact's own dist-dir
+      // guard would throw "renderer dist dir not found" (see the regression test above).
+      // A clean pass here proves on-the-spot packing never ran.
+      rendererDistDir: path.join(root, "no-such-renderer-dist-dir"),
+      rendererArtifactOutDir: path.join(root, "dist-renderer-artifact"),
+      artifactOutDir: path.join(root, "dist-server-artifact", "mac-arm64"),
+      version: "0.381.0",
+      platform: "linux",
+      arch: "x64",
+      log: () => {},
+    };
+
+    const result = await packDualKindSeed({
+      ...opts,
+      env: { HANA_SIGN_KEY: keyPath, HANA_SIGN_KEYSET: keysetPath },
+      prebuiltRendererArchive: prebuilt.archivePath,
+    });
+
+    // Manifest records the sha256/size of the prebuilt file, verified by independent hashing.
+    const measuredSha256 = createHash("sha256").update(fs.readFileSync(prebuilt.archivePath)).digest("hex");
+    expect(prebuilt.sha256).toBe(measuredSha256);
+    const manifest = JSON.parse(fs.readFileSync(result.manifestPath, "utf8"));
+    expect(manifest.artifacts.renderer.sha256).toBe(measuredSha256);
+    expect(manifest.artifacts.renderer.size).toBe(prebuilt.size);
+    expect(manifest.artifacts.renderer.path).toBe("renderer-0.381.0.tar.gz");
+
+    // Lands in both required locations with identical bytes: the per-platform seed dir
+    // (what extraResources picks up) AND the shared artifact-out dir (what CI's
+    // "Upload artifacts" step publishes as dist-renderer-artifact/renderer-*.tar.gz).
+    const inSeedDir = path.join(opts.artifactOutDir, "renderer-0.381.0.tar.gz");
+    const inSharedDir = path.join(opts.rendererArtifactOutDir, "renderer-0.381.0.tar.gz");
+    expect(fs.existsSync(inSeedDir)).toBe(true);
+    expect(fs.existsSync(inSharedDir)).toBe(true);
+    expect(createHash("sha256").update(fs.readFileSync(inSeedDir)).digest("hex")).toBe(measuredSha256);
+    expect(createHash("sha256").update(fs.readFileSync(inSharedDir)).digest("hex")).toBe(measuredSha256);
+    expect(result.rendererArchivePath).toBe(inSeedDir);
+  });
+
+  it("picks up HANA_PREBUILT_RENDERER_BOX from env when the option is not passed explicitly", async () => {
+    const root = makeTempDir("hana-dual-prebuilt-env-");
+    const { keyPath, keysetPath } = makeKeypairFiles(root);
+    const prebuilt = await packSharedRendererBox(root);
+    const opts = baseOpts(root); // has a normal, valid rendererDistDir — must still be ignored
+
+    const result = await packDualKindSeed({
+      ...opts,
+      env: { HANA_SIGN_KEY: keyPath, HANA_SIGN_KEYSET: keysetPath, HANA_PREBUILT_RENDERER_BOX: prebuilt.archivePath },
+    });
+
+    const manifest = JSON.parse(fs.readFileSync(result.manifestPath, "utf8"));
+    expect(manifest.artifacts.renderer.sha256).toBe(prebuilt.sha256);
+    expect(manifest.artifacts.renderer.size).toBe(prebuilt.size);
+  });
+
+  it("hard-errors when the prebuilt renderer archive path does not exist", async () => {
+    const root = makeTempDir("hana-dual-prebuilt-missing-");
+    const { keyPath, keysetPath } = makeKeypairFiles(root);
+    const opts = baseOpts(root);
+
+    await expect(
+      packDualKindSeed({
+        ...opts,
+        env: { HANA_SIGN_KEY: keyPath, HANA_SIGN_KEYSET: keysetPath },
+        prebuiltRendererArchive: path.join(root, `renderer-${opts.version}.tar.gz`),
+      }),
+    ).rejects.toThrow(/prebuilt renderer archive path invalid/);
+  });
+
+  it("hard-errors when the prebuilt renderer archive filename does not match the build version", async () => {
+    const root = makeTempDir("hana-dual-prebuilt-mismatch-");
+    const { keyPath, keysetPath } = makeKeypairFiles(root);
+    const opts = baseOpts(root); // version: "0.381.0"
+    const wrongVersionArchive = path.join(root, "renderer-9.9.9.tar.gz");
+    fs.writeFileSync(wrongVersionArchive, "not really a tar\n");
+
+    await expect(
+      packDualKindSeed({
+        ...opts,
+        env: { HANA_SIGN_KEY: keyPath, HANA_SIGN_KEYSET: keysetPath },
+        prebuiltRendererArchive: wrongVersionArchive,
+      }),
+    ).rejects.toThrow(/prebuilt renderer archive name mismatch/);
   });
 });

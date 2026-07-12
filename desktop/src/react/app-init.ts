@@ -34,6 +34,7 @@ import {
   readPersistedServerConnectionState,
   refreshLocalServerConnectionState,
   upsertServerConnection,
+  warnIfServerProtocolMismatch,
   type ServerConnection,
 } from './services/server-connection';
 import { persistAppearancePreferences } from './services/appearance-sync';
@@ -309,6 +310,7 @@ export async function initApp(): Promise<void> {
 async function loadIdentityForActiveConnection(connection: ServerConnection): Promise<ServerConnection> {
   const identityRes = await hanaFetch('/api/server/identity');
   const identityData = await identityRes.json();
+  warnIfServerProtocolMismatch(identityData);
   return mergeServerIdentity(connection, identityData);
 }
 
