@@ -38,9 +38,12 @@
  *   sha256 不匹配触发的"随包 seed 为准"重激活自然覆盖"server 版本换代"这
  *   一种情形。renderer 采用独立指针命名空间，用
  *   `${channel}.renderer` 作为独立指针命名空间（pointer-store 的 channel
- *   参数只是一个不透明的文件名片段，不做语义校验，因此这个限定符不需要碰
- *   受保护的 shared/artifact-core 任何模块）——两种 kind 各自的
- *   current/previous/next 互不覆盖。
+ *   参数只是一个不透明的文件名片段，不做语义校验）——两种 kind 各自的
+ *   current/previous/next 互不覆盖。`SEED_CHANNEL` 与 `rendererPointerChannel`
+ *   的唯一定义点是 `shared/artifact-core/pointer-channels.cjs`，本模块只
+ *   re-export；desktop/src/shared/artifact-ota.cjs（及其下沉后的
+ *   shared/artifact-core/ota-core.cjs 核心）也从同一处取值，不重复拼接
+ *   `${channel}.renderer` 这条字符串规则。
  * - HANA_HOME 纪律：homeDir 由调用方（main.cjs 的入口注入）传入，本模块
  *   不读环境变量、不拼 `.hanako*` 字面量。
  */
@@ -51,8 +54,9 @@ const path = require("path");
 const activation = require("../../../shared/artifact-core/activation.cjs");
 const pointerStore = require("../../../shared/artifact-core/pointer-store.cjs");
 const manifestModule = require("../../../shared/artifact-core/manifest.cjs");
+const pointerChannels = require("../../../shared/artifact-core/pointer-channels.cjs");
 
-const SEED_CHANNEL = "stable";
+const { SEED_CHANNEL, rendererPointerChannel } = pointerChannels;
 const SEED_MANIFEST_NAME = "seed-train.json";
 const HEALTHY_CLEAR_DELAY_MS = 60_000;
 const CRASH_LOOP_THRESHOLD = 3;
@@ -111,16 +115,6 @@ function verifySeedManifest({ manifestBytes, sigBytes, keyset, platformArch, req
 }
 
 /**
- * renderer 的独立指针命名空间（同一 channel 下跟 server 互不覆盖，见文件头注释）。
- * 导出：desktop/src/shared/artifact-ota.cjs 写 renderer 的
- * `next` 指针时复用这个函数，不在第二个文件里重复"${channel}.renderer"
- * 这条字符串拼接规则——命名空间只有这一处定义。
- */
-function rendererPointerChannel(channel) {
-  return `${channel}.renderer`;
-}
-
-/**
  * 纯决策：给定已解析指针、随包 seed 的 server 条目、是否处于三连败降级。
  * @param {{resolved: {slot: string, pointer: object} | null,
  *          seedEntry: {sha256: string}, crashFallback: boolean}} opts
@@ -164,94 +158,102 @@ async function prepareArtifactServerBoot({
 }) {
   if (!homeDir) throw new Error("artifact-boot: homeDir is required");
 
-  // 激活发生在下一次 boot —— 先把 next 顶成 current。
-  await pointerStore.promote(homeDir, channel);
-
-  // 三连败降级（crash-loop fallback）。
-  const failures = await activation.consecutiveFailures(homeDir, channel);
-  const crashFallback = failures >= CRASH_LOOP_THRESHOLD;
-  let quarantinedTrain = null; // non-null only when a quarantine.json entry was actually appended this call
-  // fromVersion/toVersion 只在 crashFallback 为真的这次调用里被填充——这是
-  // 一次性信号（只有真正执行了 demote 的那次调用才是 true），调用方
-  // （desktop/main.cjs）据此构造"版本 X 启动失败，已退回 Y"的用户可见提示；
-  // 数据来源是指针文件本来就有的 version 字段，不需要额外持久化。
-  let fromVersion = null;
-  let toVersion = null;
-  if (crashFallback) {
-    const current = await pointerStore.readPointer(homeDir, channel, "current");
-    const failedTrain = current && Number.isInteger(current.train) ? current.train : null;
-    fromVersion = current && typeof current.version === "string" ? current.version : null;
-    if (failedTrain !== null && failedTrain > 0) {
-      await pointerStore.appendQuarantine(homeDir, {
-        channel,
-        train: failedTrain,
-        reason: `crash-loop: ${failures} consecutive boot failures`,
-      });
-      quarantinedTrain = failedTrain;
-      log(`[artifact-boot] train ${failedTrain} quarantined after ${failures} consecutive boot failures`);
-    } else {
-      // train 0 永不隔离：seed 是终极兜底，且 quarantine 按
-      // train 号匹配，隔离 0 会连带封死未来所有安装包的 seed。
-      log(`[artifact-boot] seed train crash-looped ${failures}x; falling back without quarantine`);
-    }
-    const demoted = await pointerStore.demoteToPrevious(homeDir, channel);
-    toVersion = demoted && demoted.current && typeof demoted.current.version === "string" ? demoted.current.version : null;
-    await activation.clearSentinel(homeDir, channel); // 降级目标从零开始计数
-  }
-
-  // 读 + 验 seed（无论是否需要激活都要验：新鲜度比对依赖 manifest 内容）。
-  const { manifestPath, sigPath, seedDir } = seedPaths(resourcesPath);
-  if (!hasSeed(resourcesPath)) {
-    throw new Error(
-      `artifact-boot: packaged resources carry no seed (expected ${manifestPath} + .sig); `
-        + "the install is broken — reinstall the app",
-    );
-  }
-  const { manifest, serverEntry } = verifySeedManifest({
-    manifestBytes: fs.readFileSync(manifestPath),
-    sigBytes: fs.readFileSync(sigPath),
-    keyset,
-    platformArch,
-  });
-
-  let resolved = await activation.resolveBoot(channel, homeDir);
-  const action = decideBootAction({ resolved, seedEntry: serverEntry, crashFallback });
-
-  let activatedSeed = false;
-  if (action === "activate-seed") {
-    const archivePath = path.join(seedDir, serverEntry.path);
-    log(`[artifact-boot] activating seed train ${manifest.train} (${serverEntry.version}) from ${archivePath}`);
-    if (onProgress) onProgress();
-    // 与热更新完全相同的激活路径：一条代码路径，没有特例。allowReplaceProtected:
-    // true 是安全的——这里运行的是首启/崩溃自愈的 seed 激活，此刻还没有任何进程
-    // 在用这个目标目录（server 还没 spawn），不存在"边替换边被占用"的风险；
-    // 后台 OTA 激活（artifact-ota.cjs）不传这个参数，默认走保护检查。
-    await activation.activateFromArchive(archivePath, manifest, {
-      homeDir,
-      channel,
-      kind: "server",
-      platformArch,
-      allowReplaceProtected: true,
-    });
+  // Whole-function critical section: this decision reads/writes the
+  // channel's pointer files (promote/demote/quarantine/activate) and must
+  // never interleave, within this process, with OTA's activation segment
+  // in artifact-ota.cjs — an interleaving there can silently drop a
+  // freshly-written `next` pointer. See pointer-store.cjs's
+  // `withPointerMutex` doc comment for the full rationale.
+  return pointerStore.withPointerMutex(homeDir, async () => {
+    // 激活发生在下一次 boot —— 先把 next 顶成 current。
     await pointerStore.promote(homeDir, channel);
-    resolved = await activation.resolveBoot(channel, homeDir);
-    if (!resolved) {
-      throw new Error("artifact-boot: seed activation completed but no bootable version resolved");
-    }
-    activatedSeed = true;
-  }
 
-  return {
-    versionDir: resolved.pointer.versionDir,
-    train: Number.isInteger(resolved.pointer.train) ? resolved.pointer.train : 0,
-    version: resolved.pointer.version,
-    slot: resolved.slot,
-    activatedSeed,
-    crashFallback,
-    quarantinedTrain,
-    fromVersion,
-    toVersion,
-  };
+    // 三连败降级（crash-loop fallback）。
+    const failures = await activation.consecutiveFailures(homeDir, channel);
+    const crashFallback = failures >= CRASH_LOOP_THRESHOLD;
+    let quarantinedTrain = null; // non-null only when a quarantine.json entry was actually appended this call
+    // fromVersion/toVersion 只在 crashFallback 为真的这次调用里被填充——这是
+    // 一次性信号（只有真正执行了 demote 的那次调用才是 true），调用方
+    // （desktop/main.cjs）据此构造"版本 X 启动失败，已退回 Y"的用户可见提示；
+    // 数据来源是指针文件本来就有的 version 字段，不需要额外持久化。
+    let fromVersion = null;
+    let toVersion = null;
+    if (crashFallback) {
+      const current = await pointerStore.readPointer(homeDir, channel, "current");
+      const failedTrain = current && Number.isInteger(current.train) ? current.train : null;
+      fromVersion = current && typeof current.version === "string" ? current.version : null;
+      if (failedTrain !== null && failedTrain > 0) {
+        await pointerStore.appendQuarantine(homeDir, {
+          channel,
+          train: failedTrain,
+          reason: `crash-loop: ${failures} consecutive boot failures`,
+        });
+        quarantinedTrain = failedTrain;
+        log(`[artifact-boot] train ${failedTrain} quarantined after ${failures} consecutive boot failures`);
+      } else {
+        // train 0 永不隔离：seed 是终极兜底，且 quarantine 按
+        // train 号匹配，隔离 0 会连带封死未来所有安装包的 seed。
+        log(`[artifact-boot] seed train crash-looped ${failures}x; falling back without quarantine`);
+      }
+      const demoted = await pointerStore.demoteToPrevious(homeDir, channel);
+      toVersion = demoted && demoted.current && typeof demoted.current.version === "string" ? demoted.current.version : null;
+      await activation.clearSentinel(homeDir, channel); // 降级目标从零开始计数
+    }
+
+    // 读 + 验 seed（无论是否需要激活都要验：新鲜度比对依赖 manifest 内容）。
+    const { manifestPath, sigPath, seedDir } = seedPaths(resourcesPath);
+    if (!hasSeed(resourcesPath)) {
+      throw new Error(
+        `artifact-boot: packaged resources carry no seed (expected ${manifestPath} + .sig); `
+          + "the install is broken — reinstall the app",
+      );
+    }
+    const { manifest, serverEntry } = verifySeedManifest({
+      manifestBytes: fs.readFileSync(manifestPath),
+      sigBytes: fs.readFileSync(sigPath),
+      keyset,
+      platformArch,
+    });
+
+    let resolved = await activation.resolveBoot(channel, homeDir);
+    const action = decideBootAction({ resolved, seedEntry: serverEntry, crashFallback });
+
+    let activatedSeed = false;
+    if (action === "activate-seed") {
+      const archivePath = path.join(seedDir, serverEntry.path);
+      log(`[artifact-boot] activating seed train ${manifest.train} (${serverEntry.version}) from ${archivePath}`);
+      if (onProgress) onProgress();
+      // 与热更新完全相同的激活路径：一条代码路径，没有特例。allowReplaceProtected:
+      // true 是安全的——这里运行的是首启/崩溃自愈的 seed 激活，此刻还没有任何进程
+      // 在用这个目标目录（server 还没 spawn），不存在"边替换边被占用"的风险；
+      // 后台 OTA 激活（artifact-ota.cjs）不传这个参数，默认走保护检查。
+      await activation.activateFromArchive(archivePath, manifest, {
+        homeDir,
+        channel,
+        kind: "server",
+        platformArch,
+        allowReplaceProtected: true,
+      });
+      await pointerStore.promote(homeDir, channel);
+      resolved = await activation.resolveBoot(channel, homeDir);
+      if (!resolved) {
+        throw new Error("artifact-boot: seed activation completed but no bootable version resolved");
+      }
+      activatedSeed = true;
+    }
+
+    return {
+      versionDir: resolved.pointer.versionDir,
+      train: Number.isInteger(resolved.pointer.train) ? resolved.pointer.train : 0,
+      version: resolved.pointer.version,
+      slot: resolved.slot,
+      activatedSeed,
+      crashFallback,
+      quarantinedTrain,
+      fromVersion,
+      toVersion,
+    };
+  });
 }
 
 /**
@@ -287,92 +289,100 @@ async function prepareArtifactRendererBoot({
   if (!homeDir) throw new Error("artifact-boot: homeDir is required");
   const pointerChannel = rendererPointerChannel(channel);
 
-  // 激活发生在下一次 boot —— 先把 next 顶成 current（由后台 OTA 写入 next 指针，
-  // 的 renderer OTA 落地走的正是这个 next 指针）。
-  await pointerStore.promote(homeDir, pointerChannel);
-
-  // 三连败降级（crash-loop fallback），与 prepareArtifactServerBoot
-  // 逐条同构，只是读写 renderer 自己的指针命名空间。
-  const failures = await activation.consecutiveFailures(homeDir, pointerChannel);
-  const crashFallback = failures >= CRASH_LOOP_THRESHOLD;
-  let quarantinedTrain = null; // non-null only when a quarantine.json entry was actually appended this call
-  // fromVersion/toVersion：同 prepareArtifactServerBoot 一侧的一次性信号语义，
-  // 见该函数内对应注释。
-  let fromVersion = null;
-  let toVersion = null;
-  if (crashFallback) {
-    const current = await pointerStore.readPointer(homeDir, pointerChannel, "current");
-    const failedTrain = current && Number.isInteger(current.train) ? current.train : null;
-    fromVersion = current && typeof current.version === "string" ? current.version : null;
-    if (failedTrain !== null && failedTrain > 0) {
-      await pointerStore.appendQuarantine(homeDir, {
-        channel: pointerChannel,
-        train: failedTrain,
-        reason: `crash-loop: ${failures} consecutive renderer load failures`,
-      });
-      quarantinedTrain = failedTrain;
-      log(`[artifact-boot] renderer train ${failedTrain} quarantined after ${failures} consecutive load failures`);
-    } else {
-      // train 0 永不隔离：seed 是终极兜底。
-      log(`[artifact-boot] renderer seed train crash-looped ${failures}x; falling back without quarantine`);
-    }
-    const demoted = await pointerStore.demoteToPrevious(homeDir, pointerChannel);
-    toVersion = demoted && demoted.current && typeof demoted.current.version === "string" ? demoted.current.version : null;
-    await activation.clearSentinel(homeDir, pointerChannel); // 降级目标从零开始计数
-  }
-
-  const { manifestPath, sigPath, seedDir } = seedPaths(resourcesPath);
-  if (!hasSeed(resourcesPath)) {
-    throw new Error(
-      `artifact-boot: packaged resources carry no seed (expected ${manifestPath} + .sig); `
-        + "the install is broken — reinstall the app",
-    );
-  }
-  const { manifest, rendererEntry } = verifySeedManifest({
-    manifestBytes: fs.readFileSync(manifestPath),
-    sigBytes: fs.readFileSync(sigPath),
-    keyset,
-    requiredKinds: ["renderer"],
-  });
-
-  let resolved = await activation.resolveBoot(pointerChannel, homeDir);
-  const action = decideBootAction({ resolved, seedEntry: rendererEntry, crashFallback });
-
-  let activatedSeed = false;
-  if (action === "activate-seed") {
-    const archivePath = path.join(seedDir, rendererEntry.path);
-    log(`[artifact-boot] activating renderer seed train ${manifest.train} (${rendererEntry.version}) from ${archivePath}`);
-    if (onProgress) onProgress();
-    // 与热更新完全相同的激活路径：一条代码路径，没有特例。allowReplaceProtected:
-    // true 是安全的——触发这条分支的两个场景（首启、did-fail-load/
-    // render-process-gone 之后的自愈重激活）里，上一次加载这个目录的渲染进程
-    // 要么还没起来，要么已经崩溃/关闭，不存在"边替换边被占用"的风险；后台 OTA
-    // 激活（artifact-ota.cjs）不传这个参数，默认走保护检查。
-    await activation.activateFromArchive(archivePath, manifest, {
-      homeDir,
-      channel: pointerChannel,
-      kind: "renderer",
-      allowReplaceProtected: true,
-    });
+  // Whole-function critical section — same rationale as
+  // `prepareArtifactServerBoot`'s: mutex-keyed by `homeDir` (not the
+  // renderer's own pointer namespace), so it also serializes against the
+  // server function's and OTA's activation segment, all of which share
+  // the same homeDir. See pointer-store.cjs's `withPointerMutex` doc
+  // comment.
+  return pointerStore.withPointerMutex(homeDir, async () => {
+    // 激活发生在下一次 boot —— 先把 next 顶成 current（由后台 OTA 写入 next 指针，
+    // 的 renderer OTA 落地走的正是这个 next 指针）。
     await pointerStore.promote(homeDir, pointerChannel);
-    resolved = await activation.resolveBoot(pointerChannel, homeDir);
-    if (!resolved) {
-      throw new Error("artifact-boot: renderer seed activation completed but no bootable version resolved");
-    }
-    activatedSeed = true;
-  }
 
-  return {
-    versionDir: resolved.pointer.versionDir,
-    train: Number.isInteger(resolved.pointer.train) ? resolved.pointer.train : 0,
-    version: resolved.pointer.version,
-    slot: resolved.slot,
-    activatedSeed,
-    crashFallback,
-    quarantinedTrain,
-    fromVersion,
-    toVersion,
-  };
+    // 三连败降级（crash-loop fallback），与 prepareArtifactServerBoot
+    // 逐条同构，只是读写 renderer 自己的指针命名空间。
+    const failures = await activation.consecutiveFailures(homeDir, pointerChannel);
+    const crashFallback = failures >= CRASH_LOOP_THRESHOLD;
+    let quarantinedTrain = null; // non-null only when a quarantine.json entry was actually appended this call
+    // fromVersion/toVersion：同 prepareArtifactServerBoot 一侧的一次性信号语义，
+    // 见该函数内对应注释。
+    let fromVersion = null;
+    let toVersion = null;
+    if (crashFallback) {
+      const current = await pointerStore.readPointer(homeDir, pointerChannel, "current");
+      const failedTrain = current && Number.isInteger(current.train) ? current.train : null;
+      fromVersion = current && typeof current.version === "string" ? current.version : null;
+      if (failedTrain !== null && failedTrain > 0) {
+        await pointerStore.appendQuarantine(homeDir, {
+          channel: pointerChannel,
+          train: failedTrain,
+          reason: `crash-loop: ${failures} consecutive renderer load failures`,
+        });
+        quarantinedTrain = failedTrain;
+        log(`[artifact-boot] renderer train ${failedTrain} quarantined after ${failures} consecutive load failures`);
+      } else {
+        // train 0 永不隔离：seed 是终极兜底。
+        log(`[artifact-boot] renderer seed train crash-looped ${failures}x; falling back without quarantine`);
+      }
+      const demoted = await pointerStore.demoteToPrevious(homeDir, pointerChannel);
+      toVersion = demoted && demoted.current && typeof demoted.current.version === "string" ? demoted.current.version : null;
+      await activation.clearSentinel(homeDir, pointerChannel); // 降级目标从零开始计数
+    }
+
+    const { manifestPath, sigPath, seedDir } = seedPaths(resourcesPath);
+    if (!hasSeed(resourcesPath)) {
+      throw new Error(
+        `artifact-boot: packaged resources carry no seed (expected ${manifestPath} + .sig); `
+          + "the install is broken — reinstall the app",
+      );
+    }
+    const { manifest, rendererEntry } = verifySeedManifest({
+      manifestBytes: fs.readFileSync(manifestPath),
+      sigBytes: fs.readFileSync(sigPath),
+      keyset,
+      requiredKinds: ["renderer"],
+    });
+
+    let resolved = await activation.resolveBoot(pointerChannel, homeDir);
+    const action = decideBootAction({ resolved, seedEntry: rendererEntry, crashFallback });
+
+    let activatedSeed = false;
+    if (action === "activate-seed") {
+      const archivePath = path.join(seedDir, rendererEntry.path);
+      log(`[artifact-boot] activating renderer seed train ${manifest.train} (${rendererEntry.version}) from ${archivePath}`);
+      if (onProgress) onProgress();
+      // 与热更新完全相同的激活路径：一条代码路径，没有特例。allowReplaceProtected:
+      // true 是安全的——触发这条分支的两个场景（首启、did-fail-load/
+      // render-process-gone 之后的自愈重激活）里，上一次加载这个目录的渲染进程
+      // 要么还没起来，要么已经崩溃/关闭，不存在"边替换边被占用"的风险；后台 OTA
+      // 激活（artifact-ota.cjs）不传这个参数，默认走保护检查。
+      await activation.activateFromArchive(archivePath, manifest, {
+        homeDir,
+        channel: pointerChannel,
+        kind: "renderer",
+        allowReplaceProtected: true,
+      });
+      await pointerStore.promote(homeDir, pointerChannel);
+      resolved = await activation.resolveBoot(pointerChannel, homeDir);
+      if (!resolved) {
+        throw new Error("artifact-boot: renderer seed activation completed but no bootable version resolved");
+      }
+      activatedSeed = true;
+    }
+
+    return {
+      versionDir: resolved.pointer.versionDir,
+      train: Number.isInteger(resolved.pointer.train) ? resolved.pointer.train : 0,
+      version: resolved.pointer.version,
+      slot: resolved.slot,
+      activatedSeed,
+      crashFallback,
+      quarantinedTrain,
+      fromVersion,
+      toVersion,
+    };
+  });
 }
 
 /**
