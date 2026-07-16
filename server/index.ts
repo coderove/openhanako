@@ -105,6 +105,7 @@ import { resolveHanakoHome } from "../shared/hana-runtime-paths.ts";
 import { DATA_EPOCH } from "../shared/contract-versions.cjs";
 import { describeForeignServerBlock, isForeignServerBlocking, probeServerInfo } from "../shared/server-info-probe.cjs";
 import { coordinateDataEpochStartup, describeDataEpochStartupBlock } from "../core/data-epoch-coordinator.ts";
+import { createDataEpochCheckpointProvider } from "../core/data-epoch-checkpoint-provider.ts";
 // internal-browser WS is handled directly via raw ws.WebSocketServer in the
 // upgrade handler below (WsTransport needs raw ws .on()/.off() methods)
 import { ConfirmStore } from "../lib/confirm-store.ts";
@@ -310,8 +311,22 @@ try {
     ownVersion: appVersion,
     allowDowngrade: allowDataDowngrade,
     log: { warn: (msg: string) => console.warn(msg) },
+    // DATA_EPOCH is pinned at 1, so production never actually runs a
+    // transition today — this injection only makes sure the checkpoint
+    // provider is wired in, rather than absent, the day DATA_EPOCH first
+    // bumps (an absent provider fails closed with
+    // "checkpoint-provider-unavailable"; this makes that dead branch live).
+    checkpointProvider: createDataEpochCheckpointProvider(),
   });
   if (epochResult.allowed === false) {
+    // 机读标记先于人读文案打印：desktop 从缓存的 server stderr 里识别这行,
+    // 渲染专属双语对话框(见 desktop/main.cjs 的 detectDataEpochLaunchMarker)。
+    // blocked = 旧内核撞上更高印章;其余 reason(incomplete-transition /
+    // corrupt-* 等)统一归入 transition-incomplete 分支。人读文案不变。
+    const marker = epochResult.reason === "epoch-downgrade-blocked"
+      ? "HANA_DATA_EPOCH_BLOCKED"
+      : "HANA_DATA_EPOCH_TRANSITION_INCOMPLETE";
+    console.error(`${marker} reason=${epochResult.reason}`);
     console.error(describeDataEpochStartupBlock(epochResult));
     process.exit(1);
   }

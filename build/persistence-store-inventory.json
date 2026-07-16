@@ -383,6 +383,80 @@
       "exemption": null
     },
     {
+      "id": "data-epoch-checkpoints",
+      "ownerModule": "core/data-epoch-checkpoint-provider.ts",
+      "pathPattern": "data-epoch-checkpoints/{transitionId}/**",
+      "pathPatterns": [
+        "data-epoch-checkpoints/{transitionId}/**"
+      ],
+      "pathExclusions": [],
+      "pathKind": "tree",
+      "format": "mixed-directory",
+      "schemaSource": {
+        "kind": "runtime-contract",
+        "module": "core/data-epoch-checkpoint-provider.ts",
+        "contract": "checkpoint metadata.json layout, per-store capture strategy, and verify byte/sha256 reconciliation"
+      },
+      "schemaContract": {
+        "kind": "runtime-source",
+        "source": "core/data-epoch-checkpoint-provider.ts",
+        "compatibility": "The named runtime reader is canonical; this inventory does not imply stricter validation than runtime currently performs."
+      },
+      "openEntry": [
+        "createDataEpochCheckpointProvider",
+        "pruneDataEpochCheckpoints"
+      ],
+      "migrationEntry": [],
+      "protocolModules": [],
+      "firstPossibleOpenPhase": "epoch_transition",
+      "firstPossibleWritePhase": "epoch_transition",
+      "epochPolicy": "compatible",
+      "checkpointPolicy": "This store holds captured checkpoint bytes for other stores; it is never itself listed as an affected store inside the snapshot it produces.",
+      "restorePolicy": "Read only through the provider's verify contract; a published checkpoint directory is never hand-edited or restored independently of the coordinator's restore path.",
+      "affectedByEpochMigration": false,
+      "bootstrapSafety": null,
+      "preCoordinatorReadProjection": null,
+      "identityContract": "transitionId identifies one published or in-progress checkpoint directory for one canonical HANA_HOME; provider-internal .tmp-/.invalid- suffixes on that name are staging, not separate identities.",
+      "exemption": null
+    },
+    {
+      "id": "data-epoch-restore-quarantine",
+      "ownerModule": "core/data-epoch-restore.ts",
+      "pathPattern": "data-epoch-restore-quarantine/{restoreId}/**",
+      "pathPatterns": [
+        "data-epoch-restore-quarantine/{restoreId}/**",
+        "data-epoch-restores.log"
+      ],
+      "pathExclusions": [],
+      "pathKind": "tree",
+      "format": "mixed-directory",
+      "schemaSource": {
+        "kind": "runtime-contract",
+        "module": "core/data-epoch-restore.ts",
+        "contract": "restore quarantine layout, restore-receipt.json schema, and append-only data-epoch-restores.log line shape"
+      },
+      "schemaContract": {
+        "kind": "runtime-source",
+        "source": "core/data-epoch-restore.ts",
+        "compatibility": "The named runtime reader is canonical; this inventory does not imply stricter validation than runtime currently performs."
+      },
+      "openEntry": [
+        "restoreDataEpochCheckpoint"
+      ],
+      "migrationEntry": [],
+      "protocolModules": [],
+      "firstPossibleOpenPhase": "epoch_transition",
+      "firstPossibleWritePhase": "epoch_transition",
+      "epochPolicy": "compatible",
+      "checkpointPolicy": "Excluded from epoch checkpoints; this store only ever holds the output of an already-completed restore, never an affected store's forward-transition input.",
+      "restorePolicy": "Never restored; quarantined bytes are historical evidence retained for manual forensic recovery, not replayed automatically by any restore.",
+      "affectedByEpochMigration": false,
+      "bootstrapSafety": null,
+      "preCoordinatorReadProjection": null,
+      "identityContract": "restoreId identifies one restore transaction's quarantined bytes for one canonical HANA_HOME; data-epoch-restores.log is one shared append-only audit trail across every restore for that home.",
+      "exemption": null
+    },
+    {
       "id": "data-epoch-stamp",
       "ownerModule": "shared/data-epoch.cjs",
       "pathPattern": "data-epoch.json",
@@ -2487,6 +2561,168 @@
       "reason": "Creates helper/request files in the operating-system temporary directory for one Windows UIA call.",
       "storeId": null,
       "exemptionId": "windows-uia-request-temp"
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 282,
+      "kind": "mkdir",
+      "excerpt": "fs.promises.mkdir(path.dirname(destPath), { recursive: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 283,
+      "kind": "copy-file",
+      "excerpt": "fs.promises.copyFile(srcPath, destPath)",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 287,
+      "kind": "mkdir",
+      "excerpt": "fs.promises.mkdir(path.dirname(destPath), { recursive: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 292,
+      "kind": "database-open",
+      "excerpt": "new Database(srcPath, { readonly: true, fileMustExist: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 475,
+      "kind": "remove-path",
+      "excerpt": "fs.promises.rm(path.join(checkpointsRoot, entry.name), { recursive: true, force: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 518,
+      "kind": "rename",
+      "excerpt": "fs.promises.rename(publishedDir, invalidDir)",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 533,
+      "kind": "mkdir",
+      "excerpt": "fs.promises.mkdir(tmpDir, { recursive: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 551,
+      "kind": "write-file",
+      "excerpt": "fs.promises.writeFile(path.join(tmpDir, \"metadata.json\"), `${JSON.stringify(metadata, null, 2)}\\n`, \"utf8\")",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 552,
+      "kind": "rename",
+      "excerpt": "fs.promises.rename(tmpDir, publishedDir)",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 554,
+      "kind": "remove-path",
+      "excerpt": "fs.promises.rm(tmpDir, { recursive: true, force: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-checkpoint-provider.ts",
+      "line": 661,
+      "kind": "remove-path",
+      "excerpt": "fs.promises.rm(entry.dir, { recursive: true, force: true })",
+      "reason": "Captures, verifies, or prunes data epoch transition checkpoints.",
+      "storeId": "data-epoch-checkpoints",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 301,
+      "kind": "mkdir",
+      "excerpt": "fs.promises.mkdir(path.dirname(destination), { recursive: true })",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 302,
+      "kind": "rename",
+      "excerpt": "fs.promises.rename(file.absPath, destination)",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 309,
+      "kind": "mkdir",
+      "excerpt": "fs.promises.mkdir(path.dirname(destination), { recursive: true })",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 310,
+      "kind": "copy-file",
+      "excerpt": "fs.promises.copyFile(source, destination)",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 544,
+      "kind": "mkdir",
+      "excerpt": "fs.promises.mkdir(path.dirname(logPath), { recursive: true })",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 545,
+      "kind": "append-file",
+      "excerpt": "fs.promises.appendFile(logPath, `${JSON.stringify(receipt)}\\n`, \"utf8\")",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "core/data-epoch-restore.ts",
+      "line": 546,
+      "kind": "atomic-write",
+      "excerpt": "durableWriteJson(receiptPath, receipt)",
+      "reason": "Quarantines pre-restore bytes, copies back checkpointed bytes, and records the restore audit trail.",
+      "storeId": "data-epoch-restore-quarantine",
+      "exemptionId": null
     },
     {
       "sourceFile": "core/device-registry.ts",
@@ -4632,7 +4868,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 1213,
+      "line": 1219,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(serverInfoPath)",
       "reason": "Deletes stale desktop server discovery state before or after a server lifecycle.",
@@ -4641,7 +4877,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 1217,
+      "line": 1223,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(serverInfoPath)",
       "reason": "Deletes stale desktop server discovery state before or after a server lifecycle.",
@@ -4650,7 +4886,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 1719,
+      "line": 1725,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(serverInfoPath)",
       "reason": "Deletes stale desktop server discovery state before or after a server lifecycle.",
@@ -4659,7 +4895,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2087,
+      "line": 2211,
       "kind": "mkdir",
       "excerpt": "fs.mkdirSync(hanakoHome, { recursive: true })",
       "reason": "Writes desktop crash or browser-command diagnostics.",
@@ -4668,7 +4904,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2088,
+      "line": 2212,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(crashLogPath, content, \"utf-8\")",
       "reason": "Writes desktop crash or browser-command diagnostics.",
@@ -4677,7 +4913,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2149,
+      "line": 2273,
       "kind": "mkdir",
       "excerpt": "fs.mkdirSync(path.dirname(lastSeenVersionPath), { recursive: true })",
       "reason": "Writes desktop window bounds or the release-announcement version bookmark.",
@@ -4686,7 +4922,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2150,
+      "line": 2274,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(lastSeenVersionPath, JSON.stringify({ version }))",
       "reason": "Writes desktop window bounds or the release-announcement version bookmark.",
@@ -4695,7 +4931,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2218,
+      "line": 2342,
       "kind": "write-file",
       "excerpt": "fs.promises.writeFile(windowStatePath, JSON.stringify(state, null, 2) + \"\\n\")",
       "reason": "Writes desktop window bounds or the release-announcement version bookmark.",
@@ -4704,7 +4940,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2317,
+      "line": 2441,
       "kind": "mkdir",
       "excerpt": "fs.promises.mkdir(path.dirname(quickChatWindowStatePath), { recursive: true })",
       "reason": "Writes desktop window bounds or the release-announcement version bookmark.",
@@ -4713,7 +4949,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 2318,
+      "line": 2442,
       "kind": "write-file",
       "excerpt": "fs.promises.writeFile(quickChatWindowStatePath, JSON.stringify(state, null, 2) + \"\\n\")",
       "reason": "Writes desktop window bounds or the release-announcement version bookmark.",
@@ -4722,7 +4958,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 4063,
+      "line": 4187,
       "kind": "append-file",
       "excerpt": "require(\"fs\").appendFileSync(require(\"path\").join(hanakoHome, \"browser-cmd.log\"), `${new Date().toISOString()} ${redactMainLogText(line)}\\n`)",
       "reason": "Writes desktop crash or browser-command diagnostics.",
@@ -4731,7 +4967,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 4630,
+      "line": 4754,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(tmpHtml, htmlContent, \"utf-8\")",
       "reason": "Writes and removes one request-scoped screenshot HTML file under the operating-system temporary directory.",
@@ -4740,7 +4976,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 4684,
+      "line": 4808,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(tmpHtml)",
       "reason": "Writes and removes one request-scoped screenshot HTML file under the operating-system temporary directory.",
@@ -4749,7 +4985,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5239,
+      "line": 5363,
       "kind": "mkdir",
       "excerpt": "fs.mkdirSync(tmpDir, { recursive: true })",
       "reason": "Creates a request-scoped skill preview directory under Electron's operating-system temp path.",
@@ -4758,7 +4994,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5385,
+      "line": 5509,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(filePath, content, \"utf-8\")",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4767,7 +5003,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5407,
+      "line": 5531,
       "kind": "mkdir",
       "excerpt": "fs.mkdirSync(path.dirname(resolved), { recursive: true })",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4776,7 +5012,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5408,
+      "line": 5532,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(resolved, Buffer.from(base64Data, \"base64\"))",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4785,7 +5021,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5419,
+      "line": 5543,
       "kind": "mkdir",
       "excerpt": "fs.mkdirSync(path.dirname(destinationPath), { recursive: true })",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4794,7 +5030,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5420,
+      "line": 5544,
       "kind": "copy-file",
       "excerpt": "fs.copyFileSync(sourcePath, destinationPath)",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4803,7 +5039,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5453,
+      "line": 5577,
       "kind": "mkdir",
       "excerpt": "fs.mkdirSync(dir, { recursive: true })",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4812,7 +5048,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5454,
+      "line": 5578,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(filePath, pngBuffer)",
       "reason": "Writes an absolute path selected by the renderer or a screenshot directory selected by the user; no HANA_HOME store is implied.",
@@ -4821,7 +5057,7 @@
     },
     {
       "sourceFile": "desktop/main.cjs",
-      "line": 5976,
+      "line": 6100,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(path.join(hanakoHome, \"server-info.json\"))",
       "reason": "Deletes stale desktop server discovery state before or after a server lifecycle.",
@@ -7413,7 +7649,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 297,
+      "line": 298,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(serverInfoPath)",
       "reason": "Writes or deletes live server discovery state.",
@@ -7422,7 +7658,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 445,
+      "line": 460,
       "kind": "persistent-store-constructor",
       "excerpt": "new DeferredResultStore( hub.eventBus, path.join(hanakoHome, \".ephemeral\", \"deferred-tasks.json\"), { getSessionIdForPath: (sessionPath: string) => engine.getSessionIdForPath?.(sessionPath) || null }, )",
       "reason": "Constructs the deferred result store.",
@@ -7431,7 +7667,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 645,
+      "line": 660,
       "kind": "persistent-store-constructor",
       "excerpt": "new ConfirmStore({ getSessionIdForPath: (sessionPath: string) => engine.getSessionIdForPath?.(sessionPath) || null, })",
       "reason": "ConfirmStore is deliberately process-memory-only: pending approvals time out or abort with their session and have no restart replay contract.",
@@ -7440,7 +7676,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 650,
+      "line": 665,
       "kind": "persistent-store-constructor",
       "excerpt": "new SubagentRunStore( path.join(hanakoHome, \"subagent-runs.json\"), { getSessionIdForPath: (sessionPath: string) => engine.getSessionIdForPath?.(sessionPath) || null }, )",
       "reason": "Constructs subagent stores.",
@@ -7449,7 +7685,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 656,
+      "line": 671,
       "kind": "persistent-store-constructor",
       "excerpt": "new SubagentThreadStore( path.join(hanakoHome, \"subagent-threads.json\"), { getSessionIdForPath: (sessionPath: string) => engine.getSessionIdForPath?.(sessionPath) || null }, )",
       "reason": "Constructs subagent stores.",
@@ -7458,7 +7694,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 667,
+      "line": 682,
       "kind": "persistent-store-constructor",
       "excerpt": "new WorkflowActivityStore( path.join(hanakoHome, \"workflow-activity.json\"), )",
       "reason": "Constructs the workflow activity store.",
@@ -7467,7 +7703,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 1139,
+      "line": 1154,
       "kind": "append-file",
       "excerpt": "fs.promises.appendFile(_bwsLogPath, chunk)",
       "reason": "Appends the browser worker log.",
@@ -7476,7 +7712,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 1198,
+      "line": 1213,
       "kind": "write-file",
       "excerpt": "fs.writeFileSync(serverInfoPath, JSON.stringify({ pid: process.pid, port: actualPort, host, configuredHost: serverRuntimeState.listenHost, networkMode: serverRuntimeState.mode, configuredMode: serverRuntimeState.configuredMode, configuredLi",
       "reason": "Writes or deletes live server discovery state.",
@@ -7485,7 +7721,7 @@
     },
     {
       "sourceFile": "server/index.ts",
-      "line": 1296,
+      "line": 1311,
       "kind": "remove-path",
       "excerpt": "fs.unlinkSync(path.join(hanakoHome, \"server-info.json\"))",
       "reason": "Writes or deletes live server discovery state.",
@@ -8525,6 +8761,24 @@
       "excerpt": "fs.promises.unlink(filePath)",
       "reason": "Removes only a proven committed transition journal tail.",
       "storeId": "data-epoch-transition-journal",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "shared/data-epoch.cjs",
+      "line": 453,
+      "kind": "atomic-write",
+      "excerpt": "durableWriteJson(dataEpochJournalPath(homeDir), journal)",
+      "reason": "Atomically writes the data epoch transition journal.",
+      "storeId": "data-epoch-transition-journal",
+      "exemptionId": null
+    },
+    {
+      "sourceFile": "shared/data-epoch.cjs",
+      "line": 482,
+      "kind": "atomic-write",
+      "excerpt": "durableWriteJson(dataEpochStampPath(homeDir), stamp)",
+      "reason": "Atomically writes the DATA_EPOCH coordinator stamp.",
+      "storeId": "data-epoch-stamp",
       "exemptionId": null
     },
     {
