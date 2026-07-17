@@ -10,10 +10,11 @@ import { runMigrations } from "../core/migrations.ts";
 import { ProviderRegistry } from "../core/provider-registry.ts";
 import { getAgentPhoneProjectionPath, safeConversationStem } from "../lib/conversations/agent-phone-projection.ts";
 import { SEARCH_CAPABILITY_PROVIDERS } from "../shared/search-providers.ts";
+import { validateProviderModels } from "../shared/provider-model-validation.ts";
 
 // ── 测试工具 ────────────────────────────────────────────────────────────────
 
-const LATEST_DATA_VERSION = 44;
+const LATEST_DATA_VERSION = 48;
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "hana-migrations-"));
@@ -575,7 +576,7 @@ describe("migration #44: OAuth models converge into Provider Catalog", () => {
       "canonical-custom",
     ]);
     expect(prefs.getPreferences()).not.toHaveProperty("oauth_custom_models");
-    expect(prefs.getPreferences()._dataVersion).toBe(44);
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
   });
 
   it("turns legacy empty Codex models into Hana defaults and preserves additive custom models", () => {
@@ -626,6 +627,789 @@ describe("migration #44: OAuth models converge into Provider Catalog", () => {
     expect(catalog.providers["openai-codex-oauth"]).not.toHaveProperty("models");
     registry.reload();
     expect(registry.getChatModelIds("openai-codex-oauth")).toContain("gpt-5.6-sol");
+  });
+});
+
+describe("migration #45: recover persisted Codex OAuth model references", () => {
+  let tmpDir, agentsDir, userDir;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    agentsDir = path.join(tmpDir, "agents");
+    userDir = path.join(tmpDir, "user");
+    fs.mkdirSync(agentsDir, { recursive: true });
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeCatalog(providerConfig = {}) {
+    writeJson(path.join(tmpDir, "provider-catalog.json"), {
+      catalogVersion: 2,
+      providers: { "openai-codex-oauth": providerConfig },
+      capabilities: {},
+      meta: {},
+    });
+  }
+
+  function migrationRegistry(defaultModels = [{ id: "gpt-current", name: "Current", context: 400000 }]) {
+    return {
+      getDefaultModelEntries(providerId) {
+        return providerId === "openai-codex-oauth" ? structuredClone(defaultModels) : [];
+      },
+      _entries: new Map(),
+    };
+  }
+
+  function runFrom44(prefs, providerRegistry = migrationRegistry(), log: (line: any) => void = () => {}) {
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry,
+      log,
+    });
+  }
+
+  it("adds every official persisted reference while leaving all source files byte-identical", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({
+      _dataVersion: 44,
+      utility_model: { provider: "openai-codex", id: "pref-utility" },
+    });
+    writeCatalog({ api: "openai-codex-responses" });
+
+    writeAgentConfig(agentsDir, "hana", {
+      models: {
+        chat: { provider: "openai-codex-oauth", id: "agent-chat" },
+        utility: "openai-codex/agent-utility",
+      },
+      workspace_context: { discover_compatible_project_skills: false },
+    });
+
+    const sessionPaths = [
+      path.join(agentsDir, "hana", "sessions", "main.jsonl"),
+      path.join(agentsDir, "hana", "sessions", "archived", "archived.jsonl"),
+      path.join(agentsDir, "hana", "bridge", "telegram", "bridge.jsonl"),
+      path.join(agentsDir, "hana", "subagents", "run-1", "subagent.jsonl"),
+    ];
+    fs.mkdirSync(path.dirname(sessionPaths[0]), { recursive: true });
+    fs.writeFileSync(sessionPaths[0], [
+      "{ damaged line",
+      JSON.stringify({ type: "model_change", provider: "openai-codex", modelId: "session-main" }),
+      JSON.stringify({ type: "message", message: { role: "assistant", provider: "openai-codex-oauth", model: "session-assistant" } }),
+      "",
+    ].join("\n"), "utf-8");
+    writeSessionJsonl(sessionPaths[1], [{
+      role: "assistant",
+      provider: "openai-codex-oauth",
+      model: "session-archived",
+      content: [{ type: "text", text: "archived" }],
+    }]);
+    writeSessionJsonl(sessionPaths[2], [{
+      role: "assistant",
+      provider: "openai-codex",
+      model: "session-bridge",
+      content: [{ type: "text", text: "bridge" }],
+    }]);
+    writeSessionJsonl(sessionPaths[3], [{
+      role: "assistant",
+      provider: "openai-codex-oauth",
+      model: "session-subagent",
+      content: [{ type: "text", text: "subagent" }],
+    }]);
+
+    const agentCronPath = path.join(agentsDir, "hana", "desk", "cron-jobs.json");
+    writeJson(agentCronPath, {
+      jobs: [{ id: "agent-job", model: { provider: "openai-codex", id: "agent-automation" } }],
+    });
+    const studioCronPath = path.join(tmpDir, "studios", "default", "desk", "cron-jobs.json");
+    writeJson(studioCronPath, {
+      jobs: [{
+        id: "studio-job",
+        executor: { model: { provider: "openai-codex-oauth", id: "studio-automation" } },
+      }],
+    });
+
+    const channelPath = path.join(tmpDir, "channels", "ch_crew.md");
+    fs.mkdirSync(path.dirname(channelPath), { recursive: true });
+    fs.writeFileSync(channelPath, [
+      "---",
+      "id: ch_crew",
+      "agentPhoneModelOverrideEnabled: true",
+      "agentPhoneModelOverrideProvider: openai-codex",
+      "agentPhoneModelOverrideId: channel-override",
+      "---",
+      "# Crew",
+      "",
+    ].join("\n"), "utf-8");
+    const dmPath = path.join(agentsDir, "hana", "dm", "other.md");
+    fs.mkdirSync(path.dirname(dmPath), { recursive: true });
+    fs.writeFileSync(dmPath, [
+      "---",
+      "peer: other",
+      "modelOverrideEnabled: true",
+      "modelOverrideProvider: openai-codex-oauth",
+      "modelOverrideId: dm-override",
+      "---",
+      "",
+    ].join("\n"), "utf-8");
+
+    const brokenConfigPath = path.join(agentsDir, "broken", "config.yaml");
+    fs.mkdirSync(path.dirname(brokenConfigPath), { recursive: true });
+    fs.writeFileSync(brokenConfigPath, "models: [unterminated", "utf-8");
+
+    const sourcePaths = [
+      path.join(agentsDir, "hana", "config.yaml"),
+      ...sessionPaths,
+      agentCronPath,
+      studioCronPath,
+      channelPath,
+      dmPath,
+      brokenConfigPath,
+    ];
+    const originalBytes = new Map(sourcePaths.map((filePath) => [filePath, fs.readFileSync(filePath)]));
+    const logs = [];
+
+    runFrom44(prefs, migrationRegistry(), (line) => { logs.push(line); });
+
+    const catalog = readJson(path.join(tmpDir, "provider-catalog.json"));
+    const models = catalog.providers["openai-codex-oauth"].models;
+    const ids = models.map((model) => typeof model === "object" ? model.id : model);
+    expect(ids).toEqual(expect.arrayContaining([
+      "gpt-current",
+      "pref-utility",
+      "agent-chat",
+      "agent-utility",
+      "session-main",
+      "session-assistant",
+      "session-archived",
+      "session-bridge",
+      "session-subagent",
+      "agent-automation",
+      "studio-automation",
+      "channel-override",
+      "dm-override",
+    ]));
+    expect(models[0]).toEqual({ id: "gpt-current", name: "Current", context: 400000 });
+    expect(logs).toEqual(expect.arrayContaining([
+      expect.stringContaining("skipped invalid session JSONL line"),
+      expect.stringContaining("skipped invalid agent config.yaml"),
+    ]));
+    for (const [filePath, bytes] of originalBytes) {
+      expect(fs.readFileSync(filePath).equals(bytes)).toBe(true);
+    }
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+
+    const firstCatalogBytes = fs.readFileSync(path.join(tmpDir, "provider-catalog.json"));
+    const rerunPrefs = prefs.getPreferences();
+    rerunPrefs._dataVersion = 44;
+    prefs.savePreferences(rerunPrefs);
+    runFrom44(prefs, migrationRegistry());
+    expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(firstCatalogBytes)).toBe(true);
+  });
+
+  it("preserves an existing non-empty allowlist and its metadata while appending references", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({
+      _dataVersion: 44,
+      utility_model: { provider: "openai-codex-oauth", id: "legacy-selected" },
+    });
+    writeCatalog({
+      display_name: "My Codex",
+      models: [{ id: "existing", name: "Existing", context: 123456 }],
+    });
+
+    runFrom44(prefs);
+
+    expect(readJson(path.join(tmpDir, "provider-catalog.json")).providers["openai-codex-oauth"]).toEqual({
+      display_name: "My Codex",
+      models: [
+        { id: "existing", name: "Existing", context: 123456 },
+        "legacy-selected",
+      ],
+    });
+  });
+
+  it("respects an explicit empty allowlist even when persisted references exist", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({
+      _dataVersion: 44,
+      utility_model: { provider: "openai-codex", id: "legacy-selected" },
+    });
+    writeCatalog({ models: [] });
+    const before = fs.readFileSync(path.join(tmpDir, "provider-catalog.json"));
+
+    runFrom44(prefs);
+
+    expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(before)).toBe(true);
+    expect(readJson(path.join(tmpDir, "provider-catalog.json")).providers["openai-codex-oauth"].models).toEqual([]);
+  });
+
+  it("does not touch Provider Catalog when no persisted Codex reference exists", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({
+      _dataVersion: 44,
+      utility_model: { provider: "deepseek", id: "deepseek-v4-pro" },
+    });
+    writeCatalog({ models: ["existing"] });
+    const before = fs.readFileSync(path.join(tmpDir, "provider-catalog.json"));
+
+    runFrom44(prefs);
+
+    expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(before)).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("does not follow session symlinks outside HANA_HOME", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 44 });
+    writeCatalog({ models: ["existing"] });
+    const before = fs.readFileSync(path.join(tmpDir, "provider-catalog.json"));
+
+    const externalDir = makeTmpDir();
+    try {
+      writeSessionJsonl(path.join(externalDir, "outside.jsonl"), [{
+        role: "assistant",
+        provider: "openai-codex",
+        model: "must-not-cross-boundary",
+        content: [{ type: "text", text: "outside" }],
+      }]);
+      const sessionsDir = path.join(agentsDir, "hana", "sessions");
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.symlinkSync(externalDir, path.join(sessionsDir, "external"), "dir");
+
+      runFrom44(prefs);
+
+      expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(before)).toBe(true);
+      expect(fs.readFileSync(path.join(externalDir, "outside.jsonl"), "utf-8")).toContain("must-not-cross-boundary");
+    } finally {
+      fs.rmSync(externalDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("migration #46: repair legacy Provider Catalog model metadata", () => {
+  let tmpDir, agentsDir, userDir;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    agentsDir = path.join(tmpDir, "agents");
+    userDir = path.join(tmpDir, "user");
+    fs.mkdirSync(agentsDir, { recursive: true });
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeLegacyCatalog() {
+    writeJson(path.join(tmpDir, "provider-catalog.json"), {
+      catalogVersion: 2,
+      providers: {
+        custom: {
+          base_url: "https://provider.example/v1",
+          api_key: "provider-level-key-is-preserved",
+          models: [
+            "plain-model",
+            {
+              id: "legacy-model",
+              name: "Legacy Model",
+              context: 0,
+              maxOutputTokens: Number.NaN,
+              api: "",
+              API_KEY: "model-secret-must-not-appear-in-report",
+              HeAdErS: { Authorization: "another-model-secret" },
+              thinkingLevelMap: {
+                low: "medium",
+                high: " ",
+                ultra: "max",
+              },
+              customMetadata: { keep: true },
+            },
+            {
+              id: "valid-model",
+              context: 128000,
+              maxOutput: 8192,
+              thinkingLevelMap: { off: null, high: "high" },
+            },
+          ],
+        },
+      },
+      capabilities: { customCapability: { enabled: true } },
+      meta: { keep: "catalog-meta" },
+    });
+  }
+
+  function runFrom45(prefs, log: (line: any) => void = () => {}) {
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: { _entries: new Map() },
+      log,
+    });
+  }
+
+  it("backs up the complete catalog before removing only metadata rejected by current validation", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 45 });
+    writeLegacyCatalog();
+    const catalogPath = path.join(tmpDir, "provider-catalog.json");
+    const originalCatalogBytes = fs.readFileSync(catalogPath);
+    const logs = [];
+
+    runFrom45(prefs, (line) => { logs.push(line); });
+
+    const catalog = readJson(catalogPath);
+    expect(catalog.providers.custom).toEqual({
+      base_url: "https://provider.example/v1",
+      api_key: "provider-level-key-is-preserved",
+      models: [
+        "plain-model",
+        {
+          id: "legacy-model",
+          name: "Legacy Model",
+          thinkingLevelMap: { low: "medium" },
+          customMetadata: { keep: true },
+        },
+        {
+          id: "valid-model",
+          context: 128000,
+          maxOutput: 8192,
+          thinkingLevelMap: { off: null, high: "high" },
+        },
+      ],
+    });
+    expect(catalog.capabilities.customCapability).toEqual({ enabled: true });
+    expect(catalog.meta.keep).toBe("catalog-meta");
+    validateProviderModels("custom", catalog.providers.custom.models, {
+      baseUrl: catalog.providers.custom.base_url,
+    });
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+
+    const backupRoot = path.join(tmpDir, "migration-backups");
+    const backupDirs = fs.readdirSync(backupRoot);
+    expect(backupDirs).toHaveLength(1);
+    const backupDir = path.join(backupRoot, backupDirs[0]);
+    expect(
+      fs.readFileSync(path.join(backupDir, "provider-catalog.json")).equals(originalCatalogBytes),
+    ).toBe(true);
+    const reportText = fs.readFileSync(path.join(backupDir, "migration-report.json"), "utf-8");
+    expect(reportText).toContain('"field');
+    expect(reportText).toContain("API_KEY");
+    expect(reportText).toContain("thinkingLevelMap.ultra");
+    expect(reportText).not.toContain("model-secret-must-not-appear-in-report");
+    expect(reportText).not.toContain("another-model-secret");
+    expect(logs.join("\n")).not.toContain("model-secret-must-not-appear-in-report");
+    expect(logs.join("\n")).not.toContain("another-model-secret");
+
+    const firstCatalogBytes = fs.readFileSync(catalogPath);
+    const rerunPrefs = prefs.getPreferences();
+    rerunPrefs._dataVersion = 45;
+    prefs.savePreferences(rerunPrefs);
+    runFrom45(prefs);
+    expect(fs.readFileSync(catalogPath).equals(firstCatalogBytes)).toBe(true);
+    expect(fs.readdirSync(backupRoot)).toEqual(backupDirs);
+  });
+
+  it("leaves the catalog and data version untouched when the recovery backup cannot be created", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 45 });
+    writeLegacyCatalog();
+    const catalogPath = path.join(tmpDir, "provider-catalog.json");
+    const originalCatalogBytes = fs.readFileSync(catalogPath);
+    fs.writeFileSync(path.join(tmpDir, "migration-backups"), "blocked", "utf-8");
+
+    runFrom45(prefs);
+
+    expect(fs.readFileSync(catalogPath).equals(originalCatalogBytes)).toBe(true);
+    expect(prefs.getPreferences()._dataVersion).toBe(45);
+  });
+});
+
+describe("migration #47: preserve stable DingTalk application authentication", () => {
+  let tmpDir, agentsDir, userDir;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    agentsDir = path.join(tmpDir, "agents");
+    userDir = path.join(tmpDir, "user");
+    fs.mkdirSync(agentsDir, { recursive: true });
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function runFrom46(log: (line: any) => void = () => {}) {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 46 });
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: makeRegistry([]),
+      log,
+    });
+    return prefs;
+  }
+
+  it("marks and canonicalizes a stable config while preserving behavior and secrets", () => {
+    writeAgentConfig(agentsDir, "hana", {
+      bridge: {
+        dingtalk: {
+          enabled: true,
+          clientId: "stable-client",
+          clientSecret: "stable-secret",
+          robotCode: "stable-robot",
+          restBaseUrl: "https://legacy-gateway.example/dingtalk/v1.0/",
+          streamOpenUrl: "https://stream.example/v1.0/gateway/connections/open",
+          customSetting: { keep: true },
+        },
+      },
+    });
+
+    const prefs = runFrom46();
+    const migrated = readAgentConfig(agentsDir, "hana").bridge.dingtalk;
+    expect(migrated).toMatchObject({
+      enabled: true,
+      authMode: "legacy_app",
+      corpId: "",
+      clientId: "stable-client",
+      clientSecret: "stable-secret",
+      robotCode: "stable-robot",
+      apiBaseUrl: "https://legacy-gateway.example/dingtalk/v1.0",
+      streamOpenUrl: "https://stream.example/v1.0/gateway/connections/open",
+      customSetting: { keep: true },
+    });
+    expect(migrated).not.toHaveProperty("appKey");
+    expect(migrated).not.toHaveProperty("appSecret");
+    expect(migrated).not.toHaveProperty("restBaseUrl");
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+
+    const firstBytes = fs.readFileSync(path.join(agentsDir, "hana", "config.yaml"));
+    const rerunPrefs = prefs.getPreferences();
+    rerunPrefs._dataVersion = 46;
+    prefs.savePreferences(rerunPrefs);
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: makeRegistry([]),
+      log: () => {},
+    });
+    expect(fs.readFileSync(path.join(agentsDir, "hana", "config.yaml")).equals(firstBytes)).toBe(true);
+  });
+
+  it("does not infer legacy mode for explicit or current-shaped configurations", () => {
+    const fixtures = {
+      "explicit-mode": {
+        authMode: "legacy_app",
+        appKey: "leave-alias-intact",
+        appSecret: "leave-secret-intact",
+        restBaseUrl: "https://api.dingtalk.io/v1.0",
+      },
+      "has-corp": {
+        corpId: "corp-1",
+        appKey: "leave-client-intact",
+        appSecret: "leave-secret-intact",
+        restBaseUrl: "https://api.dingtalk.io/v1.0",
+      },
+      "canonical-incomplete": {
+        clientId: "current-client",
+        clientSecret: "current-secret",
+        robotCode: "current-robot",
+        apiBaseUrl: "https://api.dingtalk.com/v1.0",
+      },
+    };
+    for (const [agentId, dingtalk] of Object.entries(fixtures)) {
+      writeAgentConfig(agentsDir, agentId, {
+        bridge: { dingtalk },
+        workspace_context: { discover_compatible_project_skills: false },
+      });
+    }
+    const before = new Map(Object.keys(fixtures).map((agentId) => [
+      agentId,
+      fs.readFileSync(path.join(agentsDir, agentId, "config.yaml")),
+    ]));
+
+    runFrom46();
+
+    for (const agentId of Object.keys(fixtures)) {
+      expect(fs.readFileSync(path.join(agentsDir, agentId, "config.yaml")).equals(before.get(agentId)!)).toBe(true);
+    }
+  });
+
+  it("isolates malformed configs without logging their secret contents", () => {
+    const badDir = path.join(agentsDir, "bad");
+    fs.mkdirSync(badDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(badDir, "config.yaml"),
+      "bridge:\n  dingtalk: [\n  clientSecret: secret-must-not-leak\n",
+      "utf-8",
+    );
+    writeAgentConfig(agentsDir, "good", {
+      bridge: {
+        dingtalk: {
+          appKey: "good-client",
+          appSecret: "good-secret",
+          robotCode: "good-robot",
+          restBaseUrl: "https://api.dingtalk.io/v1.0",
+        },
+      },
+    });
+    const logs: string[] = [];
+
+    const prefs = runFrom46((line) => { logs.push(String(line)); });
+
+    expect(readAgentConfig(agentsDir, "good").bridge.dingtalk.authMode).toBe("legacy_app");
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+    expect(logs.join("\n")).toContain("skipped invalid config");
+    expect(logs.join("\n")).not.toContain("secret-must-not-leak");
+  });
+
+  it("isolates an invalid legacy URL and still migrates another Agent", () => {
+    writeAgentConfig(agentsDir, "bad-url", {
+      bridge: {
+        dingtalk: {
+          appKey: "bad-client",
+          appSecret: "secret-must-not-leak",
+          robotCode: "bad-robot",
+          restBaseUrl: "not-an-absolute-url",
+        },
+      },
+      workspace_context: { discover_compatible_project_skills: false },
+    });
+    writeAgentConfig(agentsDir, "good", {
+      bridge: {
+        dingtalk: {
+          appKey: "good-client",
+          appSecret: "good-secret",
+          robotCode: "good-robot",
+          restBaseUrl: "https://api.dingtalk.io/v1.0",
+        },
+      },
+      workspace_context: { discover_compatible_project_skills: false },
+    });
+    const badBytes = fs.readFileSync(path.join(agentsDir, "bad-url", "config.yaml"));
+    const logs: string[] = [];
+
+    const prefs = runFrom46((line) => { logs.push(String(line)); });
+
+    expect(fs.readFileSync(path.join(agentsDir, "bad-url", "config.yaml")).equals(badBytes)).toBe(true);
+    expect(readAgentConfig(agentsDir, "good").bridge.dingtalk.authMode).toBe("legacy_app");
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+    expect(logs.join("\n")).toContain("stage=canonicalize");
+    expect(logs.join("\n")).toContain("code=INVALID_DINGTALK_CONFIG");
+    expect(logs.join("\n")).not.toContain("not-an-absolute-url");
+    expect(logs.join("\n")).not.toContain("secret-must-not-leak");
+  });
+
+  it("keeps the data version retryable when a valid migration cannot be written", () => {
+    writeAgentConfig(agentsDir, "readonly", {
+      bridge: {
+        dingtalk: {
+          appKey: "stable-client",
+          appSecret: "secret-must-not-leak",
+          robotCode: "stable-robot",
+          restBaseUrl: "https://api.dingtalk.io/v1.0",
+        },
+      },
+    });
+    const configPath = path.join(agentsDir, "readonly", "config.yaml");
+    const originalBytes = fs.readFileSync(configPath);
+    const originalRenameSync = fs.renameSync;
+    const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {
+      if (destination === configPath) {
+        throw Object.assign(new Error("secret-must-not-leak"), { code: "EACCES" });
+      }
+      return originalRenameSync(source, destination);
+    });
+    const logs: string[] = [];
+
+    try {
+      const prefs = runFrom46((line) => { logs.push(String(line)); });
+      expect(prefs.getPreferences()._dataVersion).toBe(46);
+    } finally {
+      renameSpy.mockRestore();
+    }
+
+    expect(fs.readFileSync(configPath).equals(originalBytes)).toBe(true);
+    expect(logs.join("\n")).toContain("stage=write, code=EACCES");
+    expect(logs.join("\n")).not.toContain("secret-must-not-leak");
+  });
+
+  it.runIf(process.platform !== "win32")("does not follow linked agent directories or config files", () => {
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), "hana-dingtalk-external-"));
+    try {
+      writeAgentConfig(externalDir, "outside", {
+        bridge: {
+          dingtalk: {
+            appKey: "outside-client",
+            appSecret: "outside-secret",
+            restBaseUrl: "https://api.dingtalk.io/v1.0",
+          },
+        },
+      });
+      const outsidePath = path.join(externalDir, "outside", "config.yaml");
+      const outsideBytes = fs.readFileSync(outsidePath);
+      fs.symlinkSync(path.join(externalDir, "outside"), path.join(agentsDir, "linked-agent"));
+      const linkedConfigDir = path.join(agentsDir, "linked-config");
+      fs.mkdirSync(linkedConfigDir, { recursive: true });
+      fs.symlinkSync(outsidePath, path.join(linkedConfigDir, "config.yaml"));
+
+      runFrom46();
+
+      expect(fs.readFileSync(outsidePath).equals(outsideBytes)).toBe(true);
+    } finally {
+      fs.rmSync(externalDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("migration #48: preserve stable compatible workspace skill discovery", () => {
+  let tmpDir, agentsDir, userDir;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    agentsDir = path.join(tmpDir, "agents");
+    userDir = path.join(tmpDir, "user");
+    fs.mkdirSync(agentsDir, { recursive: true });
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function runFrom47(log: (line: any) => void = () => {}) {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 47 });
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: makeRegistry([]),
+      log,
+    });
+    return prefs;
+  }
+
+  it("enables compatible project skills only when the new policy field is missing", () => {
+    writeAgentConfig(agentsDir, "stable-no-context", {
+      agent: { name: "Stable" },
+      skills: { enabled: ["skill-creator"] },
+      desk: { heartbeat_enabled: false },
+    });
+    writeAgentConfig(agentsDir, "stable-partial-context", {
+      agent: { name: "Partial" },
+      workspace_context: {
+        inject_agents_md: true,
+        discover_project_skills: false,
+      },
+    });
+    writeAgentConfig(agentsDir, "explicit-false", {
+      workspace_context: { discover_compatible_project_skills: false },
+    });
+    writeAgentConfig(agentsDir, "explicit-true", {
+      workspace_context: { discover_compatible_project_skills: true },
+    });
+    const explicitBytes = new Map(["explicit-false", "explicit-true"].map((agentId) => [
+      agentId,
+      fs.readFileSync(path.join(agentsDir, agentId, "config.yaml")),
+    ]));
+
+    const prefs = runFrom47();
+
+    expect(readAgentConfig(agentsDir, "stable-no-context")).toEqual({
+      agent: { name: "Stable" },
+      skills: { enabled: ["skill-creator"] },
+      desk: { heartbeat_enabled: false },
+      workspace_context: { discover_compatible_project_skills: true },
+    });
+    expect(readAgentConfig(agentsDir, "stable-partial-context").workspace_context).toEqual({
+      inject_agents_md: true,
+      discover_project_skills: false,
+      discover_compatible_project_skills: true,
+    });
+    expect(readAgentConfig(agentsDir, "explicit-false").workspace_context.discover_compatible_project_skills).toBe(false);
+    expect(readAgentConfig(agentsDir, "explicit-true").workspace_context.discover_compatible_project_skills).toBe(true);
+    for (const [agentId, bytes] of explicitBytes) {
+      expect(fs.readFileSync(path.join(agentsDir, agentId, "config.yaml")).equals(bytes)).toBe(true);
+    }
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+
+    const migratedBytes = new Map(["stable-no-context", "stable-partial-context"].map((agentId) => [
+      agentId,
+      fs.readFileSync(path.join(agentsDir, agentId, "config.yaml")),
+    ]));
+    const rerunPrefs = prefs.getPreferences();
+    rerunPrefs._dataVersion = 47;
+    prefs.savePreferences(rerunPrefs);
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: makeRegistry([]),
+      log: () => {},
+    });
+    for (const [agentId, bytes] of migratedBytes) {
+      expect(fs.readFileSync(path.join(agentsDir, agentId, "config.yaml")).equals(bytes)).toBe(true);
+    }
+  });
+
+  it("isolates malformed workspace policy data without changing explicit source bytes", () => {
+    writeAgentConfig(agentsDir, "malformed", {
+      agent: { name: "Malformed" },
+      workspace_context: [],
+    });
+    writeAgentConfig(agentsDir, "good", { agent: { name: "Good" } });
+    const malformedPath = path.join(agentsDir, "malformed", "config.yaml");
+    const malformedBytes = fs.readFileSync(malformedPath);
+    const logs: string[] = [];
+
+    const prefs = runFrom47((line) => { logs.push(String(line)); });
+
+    expect(fs.readFileSync(malformedPath).equals(malformedBytes)).toBe(true);
+    expect(readAgentConfig(agentsDir, "good").workspace_context.discover_compatible_project_skills).toBe(true);
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+    expect(logs.join("\n")).toContain("stage=workspace_context");
+  });
+
+  it("keeps the policy migration retryable when a valid Agent config cannot be written", () => {
+    writeAgentConfig(agentsDir, "readonly", { agent: { name: "Readonly" } });
+    const configPath = path.join(agentsDir, "readonly", "config.yaml");
+    const originalBytes = fs.readFileSync(configPath);
+    const originalRenameSync = fs.renameSync;
+    const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {
+      if (destination === configPath) {
+        throw Object.assign(new Error("private-content-must-not-leak"), { code: "EACCES" });
+      }
+      return originalRenameSync(source, destination);
+    });
+    const logs: string[] = [];
+
+    try {
+      const prefs = runFrom47((line) => { logs.push(String(line)); });
+      expect(prefs.getPreferences()._dataVersion).toBe(47);
+    } finally {
+      renameSpy.mockRestore();
+    }
+
+    expect(fs.readFileSync(configPath).equals(originalBytes)).toBe(true);
+    expect(logs.join("\n")).toContain("stage=write, code=EACCES");
+    expect(logs.join("\n")).not.toContain("private-content-must-not-leak");
+  });
+
+  it.runIf(process.platform !== "win32")("does not follow linked Agent directories or config files", () => {
+    const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hana-workspace-policy-external-"));
+    try {
+      writeAgentConfig(externalRoot, "outside", { agent: { name: "Outside" } });
+      const outsidePath = path.join(externalRoot, "outside", "config.yaml");
+      const outsideBytes = fs.readFileSync(outsidePath);
+      fs.symlinkSync(path.join(externalRoot, "outside"), path.join(agentsDir, "linked-agent"));
+      const linkedConfigDir = path.join(agentsDir, "linked-config");
+      fs.mkdirSync(linkedConfigDir, { recursive: true });
+      fs.symlinkSync(outsidePath, path.join(linkedConfigDir, "config.yaml"));
+
+      runFrom47();
+
+      expect(fs.readFileSync(outsidePath).equals(outsideBytes)).toBe(true);
+    } finally {
+      fs.rmSync(externalRoot, { recursive: true, force: true });
+    }
   });
 });
 
