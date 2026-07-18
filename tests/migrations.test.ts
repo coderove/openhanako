@@ -6,7 +6,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import YAML from "js-yaml";
-import { runMigrations } from "../core/migrations.ts";
+import { getMigrationStatus, runMigrations } from "../core/migrations.ts";
 import { ProviderRegistry } from "../core/provider-registry.ts";
 import { getAgentPhoneProjectionPath, safeConversationStem } from "../lib/conversations/agent-phone-projection.ts";
 import { SEARCH_CAPABILITY_PROVIDERS } from "../shared/search-providers.ts";
@@ -14,7 +14,7 @@ import { validateProviderModels } from "../shared/provider-model-validation.ts";
 
 // ── 测试工具 ────────────────────────────────────────────────────────────────
 
-const LATEST_DATA_VERSION = 48;
+const LATEST_DATA_VERSION = 49;
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "hana-migrations-"));
@@ -179,6 +179,114 @@ describe("runMigrations runner", () => {
     // config 不应被修改（ghost-provider 应原样保留）
     const config = readAgentConfig(agentsDir, "hana");
     expect(config.api.provider).toBe("ghost-provider");
+  });
+
+  it("兼容只有 _dataVersion 的旧偏好，并且状态查询不写盘", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 47, keep: "unchanged" });
+    const before = fs.readFileSync(path.join(userDir, "preferences.json"));
+
+    expect(getMigrationStatus(prefs)).toEqual({
+      registryLatestId: LATEST_DATA_VERSION,
+      pendingIds: [48, 49],
+      lastFailedIds: [],
+    });
+    expect(fs.readFileSync(path.join(userDir, "preferences.json")).equals(before)).toBe(true);
+  });
+
+  it("失败后继续尝试无关迁移，已成功条目不重跑，高水位不跨过缺口", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 17 });
+    fs.writeFileSync(path.join(tmpDir, "users.json"), "{ broken json", "utf-8");
+    const firstLogs: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      runMigrations({
+        hanakoHome: tmpDir,
+        agentsDir,
+        prefs,
+        providerRegistry: makeRegistry([]),
+        log: (line) => { firstLogs.push(String(line)); },
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const afterFailure = prefs.getPreferences();
+    expect(afterFailure._dataVersion).toBe(17);
+    expect(afterFailure._migrationState.completedIds).toContain(19);
+    expect(afterFailure._migrationState.lastFailedIds).toContain(18);
+    expect(firstLogs).toContain("[migrations] #19 完成");
+    expect(getMigrationStatus(prefs).pendingIds).toContain(18);
+
+    fs.rmSync(path.join(tmpDir, "users.json"));
+    const retryLogs: string[] = [];
+    runMigrations({
+      hanakoHome: tmpDir,
+      agentsDir,
+      prefs,
+      providerRegistry: makeRegistry([]),
+      log: (line) => { retryLogs.push(String(line)); },
+    });
+
+    expect(retryLogs).not.toContain("[migrations] #19 完成");
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+    expect(getMigrationStatus(prefs)).toEqual({
+      registryLatestId: LATEST_DATA_VERSION,
+      pendingIds: [],
+      lastFailedIds: [],
+    });
+  });
+
+  it("前置迁移失败时跳过依赖项，但仍执行后面无关的迁移", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 35 });
+    fs.writeFileSync(path.join(tmpDir, "subagent-runs.json"), "{ broken json", "utf-8");
+    const logs: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      runMigrations({
+        hanakoHome: tmpDir,
+        agentsDir,
+        prefs,
+        providerRegistry: makeRegistry([]),
+        log: (line) => { logs.push(String(line)); },
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(logs).toContain("[migrations] #37 等待前置迁移 #36");
+    expect(logs).toContain("[migrations] #38 完成");
+    expect(getMigrationStatus(prefs).pendingIds).toEqual(expect.arrayContaining([36, 37]));
+    expect(getMigrationStatus(prefs).pendingIds).not.toContain(38);
+  });
+
+  it("迁移收据暂时无法落盘时不阻塞启动，并让该迁移保持待重试", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 48 });
+    const originalSave = prefs.savePreferences;
+    prefs.savePreferences = () => { throw new Error("disk temporarily read-only"); };
+    const logs: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      expect(() => runMigrations({
+        hanakoHome: tmpDir,
+        agentsDir,
+        prefs,
+        providerRegistry: makeRegistry([]),
+        log: (line) => { logs.push(String(line)); },
+      })).not.toThrow();
+    } finally {
+      prefs.savePreferences = originalSave;
+      errorSpy.mockRestore();
+    }
+
+    expect(logs).toContain("[migrations] 收据保存失败，应用将继续启动；未落盘的迁移会在下次启动重试");
+    expect(getMigrationStatus(prefs).pendingIds).toEqual([49]);
   });
 });
 
@@ -808,6 +916,67 @@ describe("migration #45: recover persisted Codex OAuth model references", () => 
     expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(firstCatalogBytes)).toBe(true);
   });
 
+  it("does not read a model_change or assistant message entry's own event id as a Codex model id, but still reads the legitimate id field on a bare model descriptor (#45 event-id pollution)", () => {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 44 });
+    writeCatalog({ api: "openai-codex-responses" });
+
+    const sessionPath = path.join(agentsDir, "hana", "sessions", "main.jsonl");
+    fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+    fs.writeFileSync(sessionPath, [
+      // Real shape produced by the Pi SDK session writer: `id` is the session
+      // tree node's own event id (8-hex, from randomUUID().slice(0, 8)), never
+      // a model id. Only `modelId` legitimately identifies the Codex model.
+      JSON.stringify({
+        type: "model_change",
+        id: "ff2c7bcc",
+        parentId: "e0",
+        timestamp: "2026-07-01T00:00:00.000Z",
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+      }),
+      // Hypothetical assistant message entry carrying a stray `id` alongside
+      // `provider`/`model` — AssistantMessage today has no such field (it uses
+      // `responseId` instead), but the extractor must not trust `id` here
+      // either, since the same "provider" key name is shared with event
+      // records that do carry a real event id.
+      JSON.stringify({
+        type: "message",
+        id: "e1",
+        parentId: "ff2c7bcc",
+        timestamp: "2026-07-01T00:00:01.000Z",
+        message: {
+          role: "assistant",
+          id: "deadbeef",
+          provider: "openai-codex-oauth",
+          model: "gpt-5.5-mini",
+        },
+      }),
+      // Legacy descriptor shape (comment at collectCodexModelsFromLegacyPersistence
+      // call site): the restored model stored beside the entry as a plain
+      // `{ provider, id }` reference object. This is NOT an event record, so its
+      // `id` legitimately identifies the model and must still be collected.
+      JSON.stringify({
+        type: "restore_snapshot",
+        id: "e2",
+        parentId: "e1",
+        timestamp: "2026-07-01T00:00:02.000Z",
+        model: { provider: "openai-codex-oauth", id: "descriptor-legit-id" },
+      }),
+      "",
+    ].join("\n"), "utf-8");
+
+    runFrom44(prefs);
+
+    const catalog = readJson(path.join(tmpDir, "provider-catalog.json"));
+    const ids = catalog.providers["openai-codex-oauth"].models.map(
+      (model) => (typeof model === "object" ? model.id : model),
+    );
+    expect(ids).toEqual(expect.arrayContaining(["gpt-5.5", "gpt-5.5-mini", "descriptor-legit-id"]));
+    expect(ids).not.toContain("ff2c7bcc");
+    expect(ids).not.toContain("deadbeef");
+  });
+
   it("preserves an existing non-empty allowlist and its metadata while appending references", () => {
     const prefs = makePrefs(userDir);
     prefs.savePreferences({
@@ -1410,6 +1579,189 @@ describe("migration #48: preserve stable compatible workspace skill discovery", 
     } finally {
       fs.rmSync(externalRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("migration #49: repair Codex OAuth model ids polluted by session event ids (#45 regression)", () => {
+  let tmpDir, agentsDir, userDir;
+
+  beforeEach(() => {
+    tmpDir = makeTmpDir();
+    agentsDir = path.join(tmpDir, "agents");
+    userDir = path.join(tmpDir, "user");
+    fs.mkdirSync(agentsDir, { recursive: true });
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeCatalog(models) {
+    writeJson(path.join(tmpDir, "provider-catalog.json"), {
+      catalogVersion: 2,
+      providers: { "openai-codex-oauth": { api: "openai-codex-responses", models } },
+      capabilities: {},
+      meta: {},
+    });
+  }
+
+  function migrationRegistry(defaultModels = []) {
+    return {
+      getDefaultModelEntries(providerId) {
+        return providerId === "openai-codex-oauth" ? structuredClone(defaultModels) : [];
+      },
+      _entries: new Map(),
+    };
+  }
+
+  function writeSessionEntries(filePath, entries) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n", "utf-8");
+  }
+
+  // 老用户已经在旧版 buggy #45 上跑过一轮升级，_dataVersion 已停在 48；
+  // 本次运行只会触发 #49。
+  function runFrom48(providerRegistry = migrationRegistry(), log: (line: any) => void = () => {}) {
+    const prefs = makePrefs(userDir);
+    prefs.savePreferences({ _dataVersion: 48 });
+    runMigrations({ hanakoHome: tmpDir, agentsDir, prefs, providerRegistry, log });
+    return prefs;
+  }
+
+  it("removes catalog entries only explainable as the #45 event-id bug, keeps every legitimate id", () => {
+    // 污染态 fixture：catalog 混了一个无关默认(gpt-current)、两条旧版 #45 bug
+    // 误收的事件 id(ff2c7bcc / deadbeef)，以及它们本该收的两个真实模型 id。
+    writeCatalog(["gpt-current", "gpt-5.5", "ff2c7bcc", "gpt-5.5-mini", "deadbeef"]);
+
+    const sessionPath = path.join(agentsDir, "hana", "sessions", "main.jsonl");
+    writeSessionEntries(sessionPath, [
+      {
+        type: "model_change",
+        id: "ff2c7bcc",
+        parentId: "e0",
+        timestamp: "2026-07-01T00:00:00.000Z",
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+      },
+      {
+        type: "message",
+        id: "e1",
+        parentId: "ff2c7bcc",
+        timestamp: "2026-07-01T00:00:01.000Z",
+        message: { role: "assistant", id: "deadbeef", provider: "openai-codex-oauth", model: "gpt-5.5-mini" },
+      },
+    ]);
+
+    const prefs = runFrom48();
+
+    const catalog = readJson(path.join(tmpDir, "provider-catalog.json"));
+    expect(catalog.providers["openai-codex-oauth"].models).toEqual(["gpt-current", "gpt-5.5", "gpt-5.5-mini"]);
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+
+    const backupRoot = path.join(tmpDir, "migration-backups");
+    const backupDirs = fs.readdirSync(backupRoot).filter((name) => name.startsWith("codex-model-id-pollution-v49-"));
+    expect(backupDirs).toHaveLength(1);
+    const backupDir = path.join(backupRoot, backupDirs[0]);
+    const report = readJson(path.join(backupDir, "migration-report.json"));
+    expect([...report.removed].sort()).toEqual(["deadbeef", "ff2c7bcc"]);
+    const backedUpCatalog = readJson(path.join(backupDir, "provider-catalog.json"));
+    expect(backedUpCatalog.providers["openai-codex-oauth"].models).toEqual([
+      "gpt-current", "gpt-5.5", "ff2c7bcc", "gpt-5.5-mini", "deadbeef",
+    ]);
+
+    // 幂等：重跑一遍不应再产生第二份备份或改动 catalog。
+    const firstCatalogBytes = fs.readFileSync(path.join(tmpDir, "provider-catalog.json"));
+    const rerunPrefs = prefs.getPreferences();
+    rerunPrefs._dataVersion = 48;
+    prefs.savePreferences(rerunPrefs);
+    runMigrations({ hanakoHome: tmpDir, agentsDir, prefs, providerRegistry: migrationRegistry(), log: () => {} });
+    expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(firstCatalogBytes)).toBe(true);
+    expect(fs.readdirSync(backupRoot).filter((name) => name.startsWith("codex-model-id-pollution-v49-"))).toHaveLength(1);
+  });
+
+  it("is a no-op on a clean catalog: no polluted ids, no backup written", () => {
+    writeCatalog(["gpt-current"]);
+    const before = fs.readFileSync(path.join(tmpDir, "provider-catalog.json"));
+
+    const prefs = runFrom48();
+
+    expect(fs.readFileSync(path.join(tmpDir, "provider-catalog.json")).equals(before)).toBe(true);
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+    expect(fs.existsSync(path.join(tmpDir, "migration-backups"))).toBe(false);
+  });
+
+  it("keeps a catalog entry that collides with an event id but is also independently referenced (name collision)", () => {
+    // "ff2c7bcc" 同时是一条 model_change 的事件 id(第二条记录的 entry.id)，
+    // 也是另一条 model_change 真实引用过的模型 id(第一条记录的 modelId)——
+    // 闭环证据法必须因为它 ∈ S_correct 而保留，不能因为它形状像事件 id 就删。
+    writeCatalog(["ff2c7bcc"]);
+    const sessionPath = path.join(agentsDir, "hana", "sessions", "main.jsonl");
+    writeSessionEntries(sessionPath, [
+      {
+        type: "model_change",
+        id: "e1",
+        parentId: "e0",
+        timestamp: "2026-07-01T00:00:00.000Z",
+        provider: "openai-codex",
+        modelId: "ff2c7bcc",
+      },
+      {
+        type: "model_change",
+        id: "ff2c7bcc",
+        parentId: "e1",
+        timestamp: "2026-07-01T00:00:01.000Z",
+        provider: "openai-codex",
+        modelId: "other-model",
+      },
+    ]);
+
+    const prefs = runFrom48();
+
+    const catalog = readJson(path.join(tmpDir, "provider-catalog.json"));
+    expect(catalog.providers["openai-codex-oauth"].models).toEqual(["ff2c7bcc"]);
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+  });
+
+  it("never removes a shipped default model even if it collides with a wrongly-collected event id", () => {
+    writeCatalog(["ff2c7bcc"]);
+    const sessionPath = path.join(agentsDir, "hana", "sessions", "main.jsonl");
+    writeSessionEntries(sessionPath, [
+      {
+        type: "model_change",
+        id: "ff2c7bcc",
+        parentId: "e0",
+        timestamp: "2026-07-01T00:00:00.000Z",
+        provider: "openai-codex",
+        modelId: "unrelated-model",
+      },
+    ]);
+
+    const prefs = runFrom48(migrationRegistry([{ id: "ff2c7bcc", name: "Coincidental Default" }]));
+
+    const catalog = readJson(path.join(tmpDir, "provider-catalog.json"));
+    expect(catalog.providers["openai-codex-oauth"].models).toEqual(["ff2c7bcc"]);
+    expect(prefs.getPreferences()._dataVersion).toBe(LATEST_DATA_VERSION);
+  });
+
+  it("leaves the catalog and data version untouched when the repair backup cannot be created", () => {
+    writeCatalog(["ff2c7bcc"]);
+    const sessionPath = path.join(agentsDir, "hana", "sessions", "main.jsonl");
+    writeSessionEntries(sessionPath, [
+      {
+        type: "model_change",
+        id: "ff2c7bcc",
+        parentId: "e0",
+        timestamp: "2026-07-01T00:00:00.000Z",
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+      },
+    ]);
+    const catalogPath = path.join(tmpDir, "provider-catalog.json");
+    const originalCatalogBytes = fs.readFileSync(catalogPath);
+    fs.writeFileSync(path.join(tmpDir, "migration-backups"), "blocked", "utf-8");
+
+    const prefs = runFrom48();
+
+    expect(fs.readFileSync(catalogPath).equals(originalCatalogBytes)).toBe(true);
+    expect(prefs.getPreferences()._dataVersion).toBe(48);
   });
 });
 
