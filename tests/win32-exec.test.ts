@@ -407,6 +407,61 @@ describe("createWin32Exec", () => {
     );
   });
 
+  it("fails fast for PowerShell inside the restricted-token sandbox", async () => {
+    classifyWin32Command.mockReturnValue({ runner: "powershell-command", reason: "default-powershell" });
+    const helper = "C:\\Hanako\\resources\\sandbox\\windows\\hana-win-sandbox.exe";
+    existsSync.mockImplementation((candidate) => candidate === helper);
+    const createWin32Exec = await loadExecFactory();
+    const exec = createWin32Exec({
+      sandbox: {
+        helperPath: helper,
+        grants: { readPaths: [], writePaths: ["C:\\work"] },
+      },
+    });
+
+    await expect(exec("Write-Output 1", "C:\\work", {
+      onData: () => {},
+      signal: undefined,
+      timeout: 5,
+      env: { PATH: "C:\\Windows\\System32", SystemRoot: "C:\\Windows" },
+    })).rejects.toMatchObject({
+      code: "HANA_WIN32_SANDBOX_POWERSHELL_UNSUPPORTED",
+      runner: "powershell-command",
+      message: expect.stringContaining('sandbox_permissions="require_escalated"'),
+    });
+    expect(spawnAndStream).not.toHaveBeenCalled();
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it("also fails fast for explicit PowerShell executables in the restricted-token sandbox", async () => {
+    classifyWin32Command.mockReturnValue({ runner: "powershell", reason: "explicit-powershell-shell" });
+    const helper = "C:\\Hanako\\resources\\sandbox\\windows\\hana-win-sandbox.exe";
+    const configuredPowerShell = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+    existsSync.mockImplementation((candidate) => candidate === helper);
+    const createWin32Exec = await loadExecFactory();
+    const exec = createWin32Exec({
+      sandbox: {
+        helperPath: helper,
+        grants: { readPaths: [], writePaths: ["C:\\work"] },
+      },
+    });
+
+    await expect(exec('pwsh -Command "Write-Output 1"', "C:\\work", {
+      onData: () => {},
+      signal: undefined,
+      timeout: 5,
+      env: {
+        HANA_POWERSHELL: configuredPowerShell,
+        PATH: "C:\\Windows\\System32",
+        SystemRoot: "C:\\Windows",
+      },
+    })).rejects.toMatchObject({
+      code: "HANA_WIN32_SANDBOX_POWERSHELL_UNSUPPORTED",
+      runner: "powershell",
+    });
+    expect(spawnAndStream).not.toHaveBeenCalled();
+  });
+
   it("routes batch scripts through cmd call without bash", async () => {
     classifyWin32Command.mockReturnValue({ runner: "cmd-script", reason: "cmd-script-file" });
     const createWin32Exec = await loadExecFactory();
@@ -463,7 +518,7 @@ describe("createWin32Exec", () => {
   });
 
   it("redirects sandbox runtime temp and cache env into the writable Hana scratch area", async () => {
-    classifyWin32Command.mockReturnValue({ runner: "powershell-command", reason: "default-powershell" });
+    classifyWin32Command.mockReturnValue({ runner: "cmd", reason: "default-cmd" });
     const helper = "C:\\Hanako\\resources\\sandbox\\windows\\hana-win-sandbox.exe";
     existsSync.mockImplementation((p) => p === helper);
     const createWin32Exec = await loadExecFactory();
@@ -479,7 +534,7 @@ describe("createWin32Exec", () => {
       },
     });
 
-    await exec("(Invoke-WebRequest -UseBasicParsing https://example.com).StatusCode", "C:\\work", {
+    await exec("echo sandbox-env", "C:\\work", {
       onData: () => {},
       signal: undefined,
       timeout: 5,
@@ -1599,16 +1654,10 @@ describe("createWin32Exec", () => {
     expect(diagnostic).not.toContain("payload.bin");
   });
 
-  it("emits STATUS_DLL_INIT_FAILED diagnostics for sandboxed PowerShell helper failures", async () => {
-    classifyWin32Command.mockReturnValue({ runner: "powershell-command", reason: "default-powershell" });
+  it("does not spawn or emit process diagnostics for unsupported sandboxed PowerShell", async () => {
+    classifyWin32Command.mockReturnValue({ runner: "powershell", reason: "explicit-powershell-shell" });
     const helper = "C:\\Hanako\\resources\\sandbox\\windows\\hana-win-sandbox.exe";
     existsSync.mockImplementation((p) => p === helper);
-    spawnAndStream.mockImplementationOnce(async (_cmd, _args, opts) => {
-      opts.onStderr(Buffer.from(
-        'hana-win-sandbox: terminal-v1 status="exited" exitCode="3221225794" timeoutMs="5000" win32Error="0"\n'
-      ));
-      return { exitCode: 3221225794 };
-    });
     const chunks = [];
     const createWin32Exec = await loadExecFactory();
     const exec = createWin32Exec({
@@ -1622,7 +1671,7 @@ describe("createWin32Exec", () => {
       },
     });
 
-    const result = await exec("Get-Location", "C:\\work", {
+    await expect(exec("powershell -Command Get-Location", "C:\\work", {
       onData: (data) => chunks.push(String(data)),
       signal: undefined,
       timeout: 5,
@@ -1630,15 +1679,10 @@ describe("createWin32Exec", () => {
         PATH: "C:\\Windows\\System32",
         SystemRoot: "C:\\Windows",
       },
-    });
+    })).rejects.toMatchObject({ code: "HANA_WIN32_SANDBOX_POWERSHELL_UNSUPPORTED" });
 
-    expect(result.exitCode).toBe(3221225794);
-    const diagnostic = chunks.join("");
-    expect(diagnostic).toContain("Route: runner=powershell-command reason=default-powershell mode=sandbox-helper sandbox=true");
-    expect(diagnostic).toContain("Executable: present=true length=");
-    expect(diagnostic).toContain("Helper: present=true length=");
-    expect(diagnostic).toContain("No fallback was attempted");
-    expect(spawnAndStream).toHaveBeenCalledTimes(1);
+    expect(chunks).toEqual([]);
+    expect(spawnAndStream).not.toHaveBeenCalled();
   });
 
   it("does not pass network capability flags for restricted-token sandboxed commands", async () => {

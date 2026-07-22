@@ -771,8 +771,14 @@ function findPythonRuntime({ command, cwd, env = process.env }: { command?: any;
   );
 }
 
-function powerShellBaseArgs() {
-  return ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass"];
+function powerShellBaseArgs({ sandboxed = false }: { sandboxed?: boolean } = {}) {
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    ...(sandboxed ? ["-NonInteractive"] : []),
+    "-ExecutionPolicy",
+    "Bypass",
+  ];
 }
 
 const POWERSHELL_UTF8_PRELUDE =
@@ -852,7 +858,7 @@ function resolveDefaultPowerShellExecutable(env = process.env) {
   });
 }
 
-function parsePowerShellCommand(command, env) {
+function parsePowerShellCommand(command, env, options = {}) {
   const args = splitShellLikeArgs(command);
   const token = args[0] || "";
   const commandName = basenameRuntimePath(token).toLowerCase();
@@ -861,11 +867,11 @@ function parsePowerShellCommand(command, env) {
   }
   return {
     executable: resolvePowerShellExecutable(token, env),
-    args: powerShellArgsWithUtf8Prelude([...powerShellBaseArgs(), ...args.slice(1)]),
+    args: powerShellArgsWithUtf8Prelude([...powerShellBaseArgs(options), ...args.slice(1)]),
   };
 }
 
-function parsePowerShellFileCommand(command, env) {
+function parsePowerShellFileCommand(command, env, options = {}) {
   const args = splitShellLikeArgs(command);
   const script = args[0] || "";
   if (!/\.ps1$/i.test(basenameRuntimePath(script))) {
@@ -874,18 +880,18 @@ function parsePowerShellFileCommand(command, env) {
   return {
     executable: resolveDefaultPowerShellExecutable(env),
     args: [
-      ...powerShellBaseArgs(),
+      ...powerShellBaseArgs(options),
       "-Command",
       withPowerShellUtf8Prelude(powerShellFileInvocation(script, args.slice(1))),
     ],
   };
 }
 
-function parseDefaultPowerShellCommand(command, env) {
+function parseDefaultPowerShellCommand(command, env, options = {}) {
   return {
     executable: resolveDefaultPowerShellExecutable(env),
     args: [
-      ...powerShellBaseArgs(),
+      ...powerShellBaseArgs(options),
       "-Command",
       withPowerShellUtf8Prelude(normalizeBackslashEscapedDoubleQuotes(command)),
     ],
@@ -1170,7 +1176,18 @@ function cleanupRootsForSandboxGrants(grants) {
   ];
 }
 
-async function spawnViaSandboxHelper({ sandbox, executable, args, cwd, env, onData, signal, timeout }) {
+async function spawnViaSandboxHelper({
+  sandbox,
+  executable,
+  args,
+  cwd,
+  env,
+  onData,
+  signal,
+  timeout,
+  desktopMode = "private",
+  verbatimLastArg = false,
+}) {
   const helper = sandbox.helperPath || resolveWin32SandboxHelper({ env });
   if (!helper) {
     throw new Error(
@@ -1186,6 +1203,8 @@ async function spawnViaSandboxHelper({ sandbox, executable, args, cwd, env, onDa
   const helperArgs = buildWin32SandboxHelperArgs({
     cwd,
     timeoutMs: nativeTimeoutMs,
+    desktopMode,
+    verbatimLastArg,
     grants,
     executable,
     args,
@@ -1247,7 +1266,7 @@ async function spawnViaSandboxHelper({ sandbox, executable, args, cwd, env, onDa
 // ── 导出 ──
 
 /**
- * 创建 Windows 平台的 bash exec 函数
+ * 创建 Windows 平台的命令执行函数
  *
  * spawn 失败时自动降级到下一个可用 shell（清缓存 + 重试）。
  * 只对 spawn 级错误（ENOENT/EACCES/EPERM）降级，abort/timeout/命令错误原样抛出。
@@ -1358,36 +1377,22 @@ export function createWin32Exec({ sandbox = null } = {}) {
     }
 
     if (route.runner === "powershell" || route.runner === "powershell-file" || route.runner === "powershell-command") {
-      const powerShellInfo = route.runner === "powershell"
-        ? parsePowerShellCommand(command, shellEnv)
-        : route.runner === "powershell-file"
-          ? parsePowerShellFileCommand(command, shellEnv)
-          : parseDefaultPowerShellCommand(command, shellEnv);
-
       if (sandboxIsEnabled(sandbox)) {
-        const helperPath = sandbox.helperPath || resolveWin32SandboxHelper({ env: shellEnv });
-        return runWithWin32Diagnostics({
-          route,
-          mode: "sandbox-helper",
-          executable: powerShellInfo.executable,
-          args: powerShellInfo.args,
-          cwd,
-          env: shellEnv,
-          onData,
-          helperPath,
-          sandbox,
-          run: (diagnosticOnData) => spawnViaSandboxHelper({
-            sandbox,
-            executable: powerShellInfo.executable,
-            args: powerShellInfo.args,
-            cwd,
-            env: shellEnv,
-            onData: diagnosticOnData,
-            signal,
-            timeout,
-          }),
-        });
+        const error: any = new Error(
+          "[win32-sandbox] PowerShell cannot run reliably inside the Windows restricted-token sandbox. "
+          + "Use a cmd.exe-compatible command, or retry explicit PowerShell with "
+          + "sandbox_permissions=\"require_escalated\".",
+        );
+        error.code = "HANA_WIN32_SANDBOX_POWERSHELL_UNSUPPORTED";
+        error.runner = route.runner;
+        throw error;
       }
+      const powerShellOptions = { sandboxed: false };
+      const powerShellInfo = route.runner === "powershell"
+        ? parsePowerShellCommand(command, shellEnv, powerShellOptions)
+        : route.runner === "powershell-file"
+          ? parsePowerShellFileCommand(command, shellEnv, powerShellOptions)
+          : parseDefaultPowerShellCommand(command, shellEnv, powerShellOptions);
 
       return runWithWin32Diagnostics({
         route,

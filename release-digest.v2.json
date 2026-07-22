@@ -3,6 +3,54 @@
   "entries": [
     {
       "schemaVersion": 1,
+      "tag": "v0.416.26",
+      "version": "0.416.26",
+      "previousTag": "v0.416.12",
+      "generatedAt": "2026-07-22T09:50:27.000Z",
+      "noUserFacingChanges": false,
+      "summary": {
+        "zh": "修复 Windows 受限命令因 PowerShell 初始化缺陷而卡死的问题，并加强真实 Windows 发布校验，避免安装包发布后才发现命令执行不可用。",
+        "en": "Fix restricted Windows commands hanging during PowerShell initialization and strengthen real Windows release verification, preventing unusable command execution from reaching published installers."
+      },
+      "counts": {
+        "feature": 0,
+        "fix": 1,
+        "improvement": 0,
+        "migration": 0
+      },
+      "source": {
+        "owner": "liliMozi",
+        "repo": "openhanako",
+        "commitRange": "v0.416.12..v0.416.26",
+        "releaseUrl": "https://github.com/liliMozi/openhanako/releases/tag/v0.416.26",
+        "releaseNotes": ""
+      },
+      "items": [
+        {
+          "id": "windows-restricted-command-startup",
+          "kind": "fix",
+          "importance": "high",
+          "title": {
+            "zh": "Windows 受限命令不再卡死",
+            "en": "Restricted Windows commands no longer hang"
+          },
+          "summary": {
+            "zh": "Windows 一次性命令现在默认使用稳定的 cmd.exe 受限执行路径；显式 PowerShell 在受限令牌下会立即提示改用 cmd 或经审查运行，不再等待超时。发布流程会在真实 Windows 环境中验证打包后的默认 cmd、Git、写入范围和拒绝写入规则。",
+            "en": "Windows one-shot commands now default to the stable restricted cmd.exe path; explicit PowerShell immediately asks for cmd-compatible syntax or reviewed execution instead of timing out under a restricted token. Releases verify packaged default cmd, Git, writable roots, and denied writes on real Windows."
+          },
+          "details": [],
+          "sources": [
+            {
+              "type": "commit",
+              "ref": "v0.416.12..v0.416.26",
+              "title": "Windows restricted command startup and packaged release verification"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
       "tag": "v0.416.12",
       "version": "0.416.12",
       "previousTag": "v0.416.4",

@@ -121,6 +121,7 @@ export function createRestrictedTokenSmokeRuntimeEnv({
     HANA_ROOT: path.win32.join(layoutRoot, "server"),
     HANA_SERVER_ENTRY: path.win32.join(layoutRoot, "server", "bundle", "index.js"),
     HANA_WIN32_SANDBOX_HELPER: helperPath,
+    HANA_WIN32_SANDBOX_DEBUG: "1",
   };
 
   // Carry the small set of host identity/system keys production inherits, but
@@ -209,13 +210,11 @@ export function runRestrictedTokenHelperSmoke({
   for (const dir of spec.runtimeDirs || []) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  const sandboxResult = spawnSyncImpl(spec.helperPath, spec.args, {
-    cwd: workDir,
-    env: spec.env,
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 45_000,
-  });
+  const sandboxResult = spawnSyncImpl(
+    spec.helperPath,
+    spec.args,
+    restrictedTokenSmokeSpawnOptions({ cwd: workDir, env: spec.env, timeout: 45_000 }),
+  );
   if (sandboxResult.error || sandboxResult.status !== 0) {
     throw new Error(
       "[verify-standalone] restricted-token sandbox smoke failed"
@@ -246,7 +245,21 @@ export function runRestrictedTokenHelperSmoke({
   if (fs.existsSync(spec.deniedMarkerPath)) {
     throw new Error("[verify-standalone] restricted-token sandbox wrote inside an explicit deny-write path");
   }
+
   return spec;
+}
+
+export function restrictedTokenSmokeSpawnOptions({ cwd, env, timeout }) {
+  return {
+    cwd,
+    env,
+    encoding: "utf8",
+    windowsHide: true,
+    // Production one-shot execution gives the helper a closed stdin. Keep the
+    // smoke on the same process contract.
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout,
+  };
 }
 
 export function standaloneExecCommandSmokeSpec({ layoutRoot, workDir, hanaHome, env = process.env }) {
@@ -260,6 +273,12 @@ export function standaloneExecCommandSmokeSpec({ layoutRoot, workDir, hanaHome, 
   return {
     command: baseEnv.ComSpec,
     args: ["/d", "/s", "/c", `call "${path.win32.join(layoutRoot, "hana-server.cmd")}"`],
+    // cmd.exe parses its raw command line instead of CommandLineToArgvW output.
+    // Letting libuv quote the final /c argument turns the inner batch-file
+    // quotes into literal \" characters, so cmd tries to execute a filename
+    // that includes quotes. The command is fully generated here; preserve it
+    // verbatim so `call "...\\hana-server.cmd"` reaches cmd.exe unchanged.
+    windowsVerbatimArguments: true,
     env: {
       ...baseEnv,
       HANA_HOME: hanaHome,
@@ -306,6 +325,7 @@ function smokeExtractedRuntime({ rootDir, layoutRoot }) {
       env: execSpec.env,
       encoding: "utf8",
       windowsHide: true,
+      windowsVerbatimArguments: execSpec.windowsVerbatimArguments,
       timeout: 90_000,
     });
     if (execResult.error || execResult.status !== 0) {

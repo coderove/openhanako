@@ -26,6 +26,9 @@
 #ifndef WRITE_RESTRICTED
 #define WRITE_RESTRICTED 0x00000008
 #endif
+#ifndef PROC_THREAD_ATTRIBUTE_JOB_LIST
+#define PROC_THREAD_ATTRIBUTE_JOB_LIST ProcThreadAttributeValue(13, FALSE, TRUE, FALSE)
+#endif
 
 struct WritableRoot {
     std::wstring path;
@@ -49,6 +52,8 @@ struct Options {
     std::vector<std::wstring> legacyProfileCleanupNames;
     bool cleanupLegacyAcl = false;
     bool diagnoseToken = false;
+    bool currentDesktop = false;
+    bool verbatimLastArg = false;
     std::wstring executable;
     std::vector<std::wstring> args;
 };
@@ -85,6 +90,8 @@ struct TokenDefaultDaclSnapshot {
 
 struct StartupAttributeList {
     LPPROC_THREAD_ATTRIBUTE_LIST list = nullptr;
+    std::vector<HANDLE> inheritedHandles;
+    std::vector<HANDLE> jobs;
 };
 
 struct GuardianControlWatch {
@@ -403,6 +410,16 @@ static Options parseArgs(int argc, wchar_t** argv) {
             opts.diagnoseToken = true;
             continue;
         }
+        if (arg == L"--current-desktop") {
+            if (opts.currentDesktop) throw std::runtime_error("duplicate --current-desktop");
+            opts.currentDesktop = true;
+            continue;
+        }
+        if (arg == L"--verbatim-last-arg") {
+            if (opts.verbatimLastArg) throw std::runtime_error("duplicate --verbatim-last-arg");
+            opts.verbatimLastArg = true;
+            continue;
+        }
         if (arg == L"--network" || arg == L"--grant-read" || arg == L"--grant-read-optional" ||
             arg == L"--grant-write" || arg == L"--grant-write-optional" || arg == L"--deny-read") {
             throw std::runtime_error("legacy AppContainer helper argument is no longer supported");
@@ -416,7 +433,7 @@ static Options parseArgs(int argc, wchar_t** argv) {
         !opts.legacyProfileCleanupNames.empty() ||
         opts.cleanupLegacyAcl;
     if (maintenanceMode) {
-        if (!opts.cwd.empty() || !opts.executable.empty() || !opts.writableRoots.empty() || !opts.denyWritePaths.empty() || opts.diagnoseToken || opts.timeoutSpecified || opts.superviseServer || opts.parentPidSpecified) {
+        if (!opts.cwd.empty() || !opts.executable.empty() || !opts.writableRoots.empty() || !opts.denyWritePaths.empty() || opts.diagnoseToken || opts.currentDesktop || opts.verbatimLastArg || opts.timeoutSpecified || opts.superviseServer || opts.parentPidSpecified) {
             throw std::runtime_error("maintenance arguments cannot be combined with sandbox execution arguments");
         }
         return opts;
@@ -425,7 +442,7 @@ static Options parseArgs(int argc, wchar_t** argv) {
         if (!opts.parentPidSpecified) throw std::runtime_error("missing --parent-pid");
         if (opts.cwd.empty()) throw std::runtime_error("missing --cwd");
         if (opts.executable.empty()) throw std::runtime_error("missing executable after --");
-        if (opts.timeoutSpecified || !opts.writableRoots.empty() || !opts.denyWritePaths.empty() || opts.diagnoseToken) {
+        if (opts.timeoutSpecified || !opts.writableRoots.empty() || !opts.denyWritePaths.empty() || opts.diagnoseToken || opts.currentDesktop || opts.verbatimLastArg) {
             throw std::runtime_error("server guardian arguments cannot be combined with sandbox execution arguments");
         }
         return opts;
@@ -434,6 +451,9 @@ static Options parseArgs(int argc, wchar_t** argv) {
     if (opts.cwd.empty()) throw std::runtime_error("missing --cwd");
     if (!opts.timeoutSpecified) throw std::runtime_error("missing --timeout-ms");
     if (opts.executable.empty()) throw std::runtime_error("missing executable after --");
+    if (opts.verbatimLastArg && opts.args.empty()) {
+        throw std::runtime_error("--verbatim-last-arg requires at least one child argument");
+    }
     if (opts.writableRoots.empty()) opts.writableRoots.push_back({ opts.cwd, true });
     return opts;
 }
@@ -467,9 +487,13 @@ static std::wstring quoteArg(const std::wstring& arg) {
 
 static std::wstring buildCommandLine(const Options& opts) {
     std::wstring command = quoteArg(opts.executable);
-    for (const auto& arg : opts.args) {
+    for (size_t i = 0; i < opts.args.size(); i++) {
         command.push_back(L' ');
-        command += quoteArg(arg);
+        if (opts.verbatimLastArg && i + 1 == opts.args.size()) {
+            command += opts.args[i];
+        } else {
+            command += quoteArg(opts.args[i]);
+        }
     }
     return command;
 }
@@ -652,7 +676,6 @@ static bool queryTokenDefaultDacl(HANDLE token, TokenDefaultDaclSnapshot& snapsh
 
 static PACL buildTokenDefaultDacl(
     const std::vector<WritableRoot>& roots,
-    PACL baseDefaultDacl,
     PSID everyoneSid,
     PSID logonSid,
     DWORD permissions
@@ -680,7 +703,7 @@ static PACL buildTokenDefaultDacl(
     DWORD rc = SetEntriesInAclW(
         static_cast<ULONG>(entries.size()),
         entries.data(),
-        baseDefaultDacl,
+        nullptr,
         &dacl
     );
     if (rc != ERROR_SUCCESS) {
@@ -880,13 +903,6 @@ static HANDLE createRestrictedWriteToken(const std::vector<WritableRoot>& roots)
         fail(L"OpenProcessToken failed: " + win32Message(GetLastError()));
         return nullptr;
     }
-    TokenDefaultDaclSnapshot baseDefaultDacl;
-    if (!queryTokenDefaultDacl(baseToken, baseDefaultDacl)) {
-        CloseHandle(baseToken);
-        fail(L"cannot preserve the token default DACL for restricted child objects");
-        return nullptr;
-    }
-
     std::vector<SID_AND_ATTRIBUTES> restrictingSids;
     std::vector<PSID> ownedRestrictingSids;
     PSID everyoneSid = nullptr;
@@ -926,7 +942,6 @@ static HANDLE createRestrictedWriteToken(const std::vector<WritableRoot>& roots)
 
     PACL defaultDacl = buildTokenDefaultDacl(
         roots,
-        baseDefaultDacl.dacl,
         everyoneSid,
         logonSid,
         GENERIC_ALL
@@ -1182,23 +1197,50 @@ static std::wstring probeRestrictedDesktopAccess(HANDLE restrictedToken, const S
     return L"error:" + std::to_wstring(rc) + L":" + win32Message(rc);
 }
 
-static std::wstring probeProcessWindowStationName() {
-    HWINSTA station = GetProcessWindowStation();
-    if (!station) {
-        DWORD rc = GetLastError();
-        return L"error:" + std::to_wstring(rc) + L":" + win32Message(rc);
+static bool queryUserObjectName(HANDLE object, std::wstring& name) {
+    name.clear();
+    if (!object) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
     }
-
     DWORD needed = 0;
-    GetUserObjectInformationW(station, UOI_NAME, nullptr, 0, &needed);
-    if (needed == 0) return L"ok";
+    GetUserObjectInformationW(object, UOI_NAME, nullptr, 0, &needed);
+    if (needed == 0) return false;
 
-    std::wstring name((needed / sizeof(wchar_t)) + 1, L'\0');
-    if (!GetUserObjectInformationW(station, UOI_NAME, name.data(), needed, &needed)) {
+    std::vector<wchar_t> buffer((needed / sizeof(wchar_t)) + 1, L'\0');
+    if (!GetUserObjectInformationW(
+        object,
+        UOI_NAME,
+        buffer.data(),
+        static_cast<DWORD>(buffer.size() * sizeof(wchar_t)),
+        &needed
+    )) {
+        return false;
+    }
+    name.assign(buffer.data());
+    if (name.empty()) {
+        SetLastError(ERROR_INVALID_NAME);
+        return false;
+    }
+    return true;
+}
+
+static bool resolveCurrentDesktop(SandboxDesktop& desktop) {
+    HWINSTA station = GetProcessWindowStation();
+    HDESK threadDesktop = GetThreadDesktop(GetCurrentThreadId());
+    if (!station || !threadDesktop) return false;
+    if (!queryUserObjectName(station, desktop.stationName)) return false;
+    if (!queryUserObjectName(threadDesktop, desktop.desktopName)) return false;
+    desktop.qualifiedName = desktop.stationName + L"\\" + desktop.desktopName;
+    return true;
+}
+
+static std::wstring probeProcessWindowStationName() {
+    std::wstring name;
+    if (!queryUserObjectName(GetProcessWindowStation(), name)) {
         DWORD rc = GetLastError();
         return L"error:" + std::to_wstring(rc) + L":" + win32Message(rc);
     }
-    while (!name.empty() && name.back() == L'\0') name.pop_back();
     return L"ok:" + name;
 }
 
@@ -1282,6 +1324,67 @@ static void emitPostCreateEarlyExitDiagnostic(
         << std::endl;
 }
 
+static std::wstring processImageBasename(DWORD processId) {
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (!process) return L"unavailable:" + std::to_wstring(GetLastError());
+
+    std::vector<wchar_t> image(32768, L'\0');
+    DWORD length = static_cast<DWORD>(image.size());
+    if (!QueryFullProcessImageNameW(process, 0, image.data(), &length)) {
+        const DWORD errorCode = GetLastError();
+        CloseHandle(process);
+        return L"unavailable:" + std::to_wstring(errorCode);
+    }
+    CloseHandle(process);
+
+    std::wstring fullPath(image.data(), length);
+    const size_t separator = fullPath.find_last_of(L"\\/");
+    return separator == std::wstring::npos ? fullPath : fullPath.substr(separator + 1);
+}
+
+static void emitTimeoutProcessSnapshot(HANDLE job) {
+    constexpr size_t MAX_REPORTED_PROCESSES = 128;
+    const DWORD bufferSize = static_cast<DWORD>(
+        sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) +
+        (MAX_REPORTED_PROCESSES - 1) * sizeof(ULONG_PTR)
+    );
+    std::vector<BYTE> buffer(bufferSize, 0);
+    auto* processes = reinterpret_cast<JOBOBJECT_BASIC_PROCESS_ID_LIST*>(buffer.data());
+    if (!QueryInformationJobObject(
+        job,
+        JobObjectBasicProcessIdList,
+        processes,
+        bufferSize,
+        nullptr
+    )) {
+        const DWORD errorCode = GetLastError();
+        std::wcerr
+            << L"hana-win-sandbox: timeout-processes-v1"
+            << L" queryError=\"" << errorCode << L"\""
+            << std::endl;
+        return;
+    }
+
+    std::wstring summary;
+    const ULONG_PTR count = std::min<ULONG_PTR>(
+        processes->NumberOfProcessIdsInList,
+        MAX_REPORTED_PROCESSES
+    );
+    for (ULONG_PTR i = 0; i < count; i++) {
+        if (!summary.empty()) summary += L",";
+        const DWORD processId = static_cast<DWORD>(processes->ProcessIdList[i]);
+        summary += std::to_wstring(processId);
+        summary += L":";
+        summary += processImageBasename(processId);
+    }
+    std::wcerr
+        << L"hana-win-sandbox: timeout-processes-v1"
+        << L" assigned=\"" << processes->NumberOfAssignedProcesses << L"\""
+        << L" listed=\"" << processes->NumberOfProcessIdsInList << L"\""
+        << L" processes=\"" << escapeDiagnosticValue(summary) << L"\""
+        << std::endl;
+}
+
 static bool isValidInheritableCandidate(HANDLE handle) {
     return handle && handle != INVALID_HANDLE_VALUE;
 }
@@ -1293,8 +1396,11 @@ static void pushUniqueHandle(std::vector<HANDLE>& handles, HANDLE handle) {
     }
 }
 
-static bool setupInheritedHandleList(const std::vector<HANDLE>& handles, StartupAttributeList& attributes) {
-    if (handles.empty()) return true;
+static bool setupStartupAttributeList(
+    const std::vector<HANDLE>& handles,
+    HANDLE job,
+    StartupAttributeList& attributes
+) {
     for (HANDLE handle : handles) {
         if (!SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
             fail(L"SetHandleInformation(HANDLE_FLAG_INHERIT) failed: " +
@@ -1302,8 +1408,11 @@ static bool setupInheritedHandleList(const std::vector<HANDLE>& handles, Startup
             return false;
         }
     }
+    const bool hasJob = isValidInheritableCandidate(job);
+    const DWORD attributeCount = (handles.empty() ? 0 : 1) + (hasJob ? 1 : 0);
+    if (attributeCount == 0) return true;
     SIZE_T size = 0;
-    InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+    InitializeProcThreadAttributeList(nullptr, attributeCount, 0, &size);
     if (size == 0) {
         fail(L"InitializeProcThreadAttributeList size failed: " + win32Message(GetLastError()));
         return false;
@@ -1315,23 +1424,45 @@ static bool setupInheritedHandleList(const std::vector<HANDLE>& handles, Startup
         fail(L"HeapAlloc for process attribute list failed");
         return false;
     }
-    if (!InitializeProcThreadAttributeList(attributes.list, 1, 0, &size)) {
+    if (!InitializeProcThreadAttributeList(attributes.list, attributeCount, 0, &size)) {
         fail(L"InitializeProcThreadAttributeList failed: " + win32Message(GetLastError()));
         return false;
     }
-    if (!UpdateProcThreadAttribute(
-        attributes.list,
-        0,
-        PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-        const_cast<HANDLE*>(handles.data()),
-        handles.size() * sizeof(HANDLE),
-        nullptr,
-        nullptr
-    )) {
-        fail(L"UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_HANDLE_LIST) failed: " + win32Message(GetLastError()));
-        return false;
+    if (!handles.empty()) {
+        attributes.inheritedHandles = handles;
+        if (!UpdateProcThreadAttribute(
+            attributes.list,
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            attributes.inheritedHandles.data(),
+            attributes.inheritedHandles.size() * sizeof(HANDLE),
+            nullptr,
+            nullptr
+        )) {
+            fail(L"UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_HANDLE_LIST) failed: " + win32Message(GetLastError()));
+            return false;
+        }
+    }
+    if (hasJob) {
+        attributes.jobs.push_back(job);
+        if (!UpdateProcThreadAttribute(
+            attributes.list,
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST,
+            attributes.jobs.data(),
+            attributes.jobs.size() * sizeof(HANDLE),
+            nullptr,
+            nullptr
+        )) {
+            fail(L"UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_JOB_LIST) failed: " + win32Message(GetLastError()));
+            return false;
+        }
     }
     return true;
+}
+
+static bool setupInheritedHandleList(const std::vector<HANDLE>& handles, StartupAttributeList& attributes) {
+    return setupStartupAttributeList(handles, nullptr, attributes);
 }
 
 static void freeStartupAttributeList(StartupAttributeList& attributes) {
@@ -1340,6 +1471,27 @@ static void freeStartupAttributeList(StartupAttributeList& attributes) {
         HeapFree(GetProcessHeap(), 0, attributes.list);
     }
     attributes.list = nullptr;
+    attributes.inheritedHandles.clear();
+    attributes.jobs.clear();
+}
+
+static bool snapshotCurrentEnvironment(std::vector<wchar_t>& environment) {
+    LPWCH rawEnvironment = GetEnvironmentStringsW();
+    if (!rawEnvironment) {
+        const DWORD errorCode = GetLastError();
+        fail(L"GetEnvironmentStringsW failed: " + win32Message(errorCode));
+        SetLastError(errorCode);
+        return false;
+    }
+    const wchar_t* begin = rawEnvironment;
+    const wchar_t* end = begin;
+    while (*end != L'\0') {
+        end += wcslen(end) + 1;
+    }
+    ++end;
+    environment.assign(begin, end);
+    FreeEnvironmentStringsW(rawEnvironment);
+    return true;
 }
 
 static DWORD WINAPI readGuardianControl(LPVOID rawContext) {
@@ -1615,8 +1767,21 @@ static int superviseServer(const Options& opts) {
 
 static int runSandboxed(const Options& opts, HANDLE restrictedToken) {
     SandboxDesktop desktop;
-    if (!createSandboxDesktop(desktop)) {
+    const bool usesPrivateDesktop = !opts.currentDesktop;
+    const bool desktopReady = usesPrivateDesktop
+        ? createSandboxDesktop(desktop)
+        : resolveCurrentDesktop(desktop);
+    if (!desktopReady) {
         DWORD errorCode = GetLastError();
+        emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
+        return HELPER_LAUNCH_FAILED_EXIT_CODE;
+    }
+
+    HANDLE job = createKillOnCloseJob();
+    if (!job) {
+        DWORD errorCode = GetLastError();
+        fail(L"CreateJobObject failed: " + win32Message(errorCode));
+        closeSandboxDesktop(desktop);
         emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
         return HELPER_LAUNCH_FAILED_EXIT_CODE;
     }
@@ -1634,18 +1799,28 @@ static int runSandboxed(const Options& opts, HANDLE restrictedToken) {
     pushUniqueHandle(inheritedHandles, startup.StartupInfo.hStdOutput);
     pushUniqueHandle(inheritedHandles, startup.StartupInfo.hStdError);
     StartupAttributeList inheritedAttributes;
-    if (!setupInheritedHandleList(inheritedHandles, inheritedAttributes)) {
-        freeStartupAttributeList(inheritedAttributes);
-        closeSandboxDesktop(desktop);
+    if (!setupStartupAttributeList(inheritedHandles, job, inheritedAttributes)) {
         DWORD errorCode = GetLastError();
+        freeStartupAttributeList(inheritedAttributes);
+        CloseHandle(job);
+        closeSandboxDesktop(desktop);
         emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
         return HELPER_LAUNCH_FAILED_EXIT_CODE;
     }
     startup.lpAttributeList = inheritedAttributes.list;
 
     std::wstring commandLine = buildCommandLine(opts);
+    std::vector<wchar_t> environmentBlock;
+    if (!snapshotCurrentEnvironment(environmentBlock)) {
+        freeStartupAttributeList(inheritedAttributes);
+        CloseHandle(job);
+        closeSandboxDesktop(desktop);
+        DWORD errorCode = GetLastError();
+        emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
+        return HELPER_LAUNCH_FAILED_EXIT_CODE;
+    }
     PROCESS_INFORMATION process = {};
-    DWORD flags = CREATE_SUSPENDED | CREATE_NO_WINDOW;
+    DWORD flags = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT;
     BOOL inheritHandles = FALSE;
     if (startup.lpAttributeList) {
         startup.StartupInfo.cb = sizeof(STARTUPINFOEXW);
@@ -1657,6 +1832,7 @@ static int runSandboxed(const Options& opts, HANDLE restrictedToken) {
     if (prelaunchDesktopProbe != L"ok") {
         emitPrelaunchDesktopProbeFailureDiagnostic(prelaunchDesktopProbe);
         freeStartupAttributeList(inheritedAttributes);
+        CloseHandle(job);
         closeSandboxDesktop(desktop);
         emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, ERROR_ACCESS_DENIED);
         return HELPER_LAUNCH_FAILED_EXIT_CODE;
@@ -1670,7 +1846,7 @@ static int runSandboxed(const Options& opts, HANDLE restrictedToken) {
         nullptr,
         inheritHandles,
         flags,
-        nullptr,
+        environmentBlock.data(),
         opts.cwd.c_str(),
         &startup.StartupInfo,
         &process
@@ -1689,42 +1865,6 @@ static int runSandboxed(const Options& opts, HANDLE restrictedToken) {
             inheritHandles,
             inheritedHandles.size()
         );
-        closeSandboxDesktop(desktop);
-        emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
-        return HELPER_LAUNCH_FAILED_EXIT_CODE;
-    }
-
-    HANDLE job = createKillOnCloseJob();
-    if (!job) {
-        DWORD errorCode = GetLastError();
-        fail(L"CreateJobObject failed: " + win32Message(errorCode));
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        closeSandboxDesktop(desktop);
-        emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
-        return HELPER_LAUNCH_FAILED_EXIT_CODE;
-    }
-    if (!AssignProcessToJobObject(job, process.hProcess)) {
-        DWORD errorCode = GetLastError();
-        fail(L"AssignProcessToJobObject failed: " + win32Message(errorCode));
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(job);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        closeSandboxDesktop(desktop);
-        emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
-        return HELPER_LAUNCH_FAILED_EXIT_CODE;
-    }
-
-    if (ResumeThread(process.hThread) == static_cast<DWORD>(-1)) {
-        DWORD errorCode = GetLastError();
-        fail(L"ResumeThread failed: " + win32Message(errorCode));
-        TerminateJobObject(job, 1);
-        DWORD ignored = ERROR_SUCCESS;
-        waitForJobEmpty(job, TERMINATION_GRACE_MS, &ignored);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
         CloseHandle(job);
         closeSandboxDesktop(desktop);
         emitTerminalRecord(L"launch_failed", false, 0, opts.timeoutMs, errorCode);
@@ -1760,6 +1900,7 @@ static int runSandboxed(const Options& opts, HANDLE restrictedToken) {
     }
 
     if (waitResult == WAIT_TIMEOUT) {
+        emitTimeoutProcessSnapshot(job);
         if (!TerminateJobObject(job, TIMEOUT_PROCESS_EXIT_CODE)) {
             DWORD errorCode = GetLastError();
             fail(L"TerminateJobObject failed: " + win32Message(errorCode));

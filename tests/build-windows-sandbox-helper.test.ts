@@ -74,6 +74,46 @@ describe("Windows sandbox helper build script", () => {
     expect(source).toContain("desktop.qualifiedName.c_str()");
   });
 
+  it("keeps private desktops as the default and explicitly names the current desktop on opt-in", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../desktop/native/HanaWindowsSandboxHelper/main.cpp"),
+      "utf8"
+    );
+    const parseArgs = source.match(
+      /static Options parseArgs\([\s\S]*?\n\}/
+    )?.[0] || "";
+    const runSandboxed = source.match(
+      /static int runSandboxed\([\s\S]*?\n\}/
+    )?.[0] || "";
+    const resolveCurrentDesktop = source.match(
+      /static bool resolveCurrentDesktop\([\s\S]*?\n\}/
+    )?.[0] || "";
+
+    expect(parseArgs).toContain('--current-desktop');
+    expect(resolveCurrentDesktop).toContain("GetProcessWindowStation()");
+    expect(resolveCurrentDesktop).toContain("GetThreadDesktop(GetCurrentThreadId())");
+    expect(resolveCurrentDesktop).toContain('desktop.qualifiedName = desktop.stationName + L"\\\\" + desktop.desktopName');
+    expect(runSandboxed).toContain("const bool usesPrivateDesktop = !opts.currentDesktop");
+    expect(runSandboxed).toContain("resolveCurrentDesktop(desktop)");
+    expect(runSandboxed).toContain("startup.StartupInfo.lpDesktop = const_cast<LPWSTR>(desktop.qualifiedName.c_str())");
+    expect(runSandboxed).toContain("probeRestrictedDesktopAccess(restrictedToken, desktop)");
+    expect(runSandboxed).toContain('if (prelaunchDesktopProbe != L"ok")');
+  });
+
+  it("preserves an explicitly owned final cmd argument without generic argv escaping", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../desktop/native/HanaWindowsSandboxHelper/main.cpp"),
+      "utf8"
+    );
+    const buildCommandLine = source.match(
+      /static std::wstring buildCommandLine\([\s\S]*?\n\}/
+    )?.[0] || "";
+
+    expect(source).toContain('--verbatim-last-arg');
+    expect(buildCommandLine).toContain("opts.verbatimLastArg && i + 1 == opts.args.size()");
+    expect(buildCommandLine).toContain("command += opts.args[i]");
+  });
+
   it("uses system cryptographic randomness for each private desktop name", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "../desktop/native/HanaWindowsSandboxHelper/main.cpp"),
@@ -329,15 +369,23 @@ describe("Windows sandbox helper build script", () => {
     expect(source).toContain("applyWriteAcls(opts.writableRoots, opts.denyWritePaths, aclRestores)");
   });
 
-  it("preserves the token default DACL owner context when adding write SIDs", () => {
+  it("builds a fresh restricted-token default DACL for child IPC objects", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "../desktop/native/HanaWindowsSandboxHelper/main.cpp"),
       "utf8"
     );
+    const buildDefaultDacl = source.match(
+      /static PACL buildTokenDefaultDacl\([\s\S]*?\n\}/
+    )?.[0] || "";
+    const createToken = source.match(
+      /static HANDLE createRestrictedWriteToken\([\s\S]*?\n\}/
+    )?.[0] || "";
 
-    expect(source).toContain("queryTokenDefaultDacl");
-    expect(source).toContain("SetEntriesInAclW(");
-    expect(source).toContain("baseDefaultDacl");
+    expect(buildDefaultDacl).toContain("SetEntriesInAclW(");
+    expect(buildDefaultDacl).toMatch(/entries\.data\(\),\s*nullptr,\s*&dacl/);
+    expect(buildDefaultDacl).not.toContain("baseDefaultDacl");
+    expect(createToken).not.toContain("queryTokenDefaultDacl");
+    expect(createToken).not.toContain("baseDefaultDacl");
   });
 
   it("keeps restricted child object creation compatible with Windows initialization", () => {
@@ -366,7 +414,7 @@ describe("Windows sandbox helper build script", () => {
     );
 
     const setupHandleList = source.match(
-      /static bool setupInheritedHandleList\([\s\S]*?\n\}/
+      /static bool setupStartupAttributeList\([\s\S]*?\n\}/
     )?.[0] || "";
 
     expect(setupHandleList).toContain("SetHandleInformation");
@@ -375,7 +423,27 @@ describe("Windows sandbox helper build script", () => {
       .toBeLessThan(setupHandleList.indexOf("UpdateProcThreadAttribute"));
     expect(setupHandleList).toContain("PROC_THREAD_ATTRIBUTE_HANDLE_LIST");
     expect(source).toContain("EXTENDED_STARTUPINFO_PRESENT");
+    expect(source).toContain("setupStartupAttributeList");
     expect(source).toContain("setupInheritedHandleList");
+  });
+
+  it("creates restricted commands with an explicit environment and atomic Job membership", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../desktop/native/HanaWindowsSandboxHelper/main.cpp"),
+      "utf8"
+    );
+    const start = source.indexOf("static int runSandboxed(");
+    const end = source.indexOf("static int diagnoseRestrictedToken(", start);
+    const runSandboxed = source.slice(start, end);
+
+    expect(runSandboxed).toContain("snapshotCurrentEnvironment(environmentBlock)");
+    expect(runSandboxed).toContain("CREATE_UNICODE_ENVIRONMENT");
+    expect(runSandboxed).toContain("environmentBlock.data()");
+    expect(runSandboxed).toContain("setupStartupAttributeList(inheritedHandles, job");
+    expect(source).toContain("PROC_THREAD_ATTRIBUTE_JOB_LIST");
+    expect(runSandboxed).not.toContain("CREATE_SUSPENDED");
+    expect(runSandboxed).not.toContain("AssignProcessToJobObject");
+    expect(runSandboxed).not.toContain("ResumeThread");
   });
 
   it("owns timeout termination in the private Job and emits a versioned terminal record", () => {
@@ -388,6 +456,10 @@ describe("Windows sandbox helper build script", () => {
     expect(source).toContain("TerminateJobObject");
     expect(source).toContain("waitForJobEmpty");
     expect(source).toContain("JobObjectBasicAccountingInformation");
+    expect(source).toContain("JobObjectBasicProcessIdList");
+    expect(source).toContain("QueryFullProcessImageNameW");
+    expect(source).toContain("timeout-processes-v1");
+    expect(source).toContain("emitTimeoutProcessSnapshot(job)");
     expect(source).toContain("terminal-v1");
     expect(source).toContain('L"timed_out"');
     expect(source).toContain('L"termination_failed"');
