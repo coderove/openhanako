@@ -33,7 +33,11 @@ import {
   resolveWin32SandboxHelper,
   resourceSiblingDir,
 } from "./win32-sandbox-helper.ts";
-import { prepareSandboxRuntime } from "./win32-runtime-cache.ts";
+import {
+  getSandboxPowerShellProbeResult,
+  prepareSandboxRuntime,
+  setSandboxPowerShellProbeResult,
+} from "./win32-runtime-cache.ts";
 import { createModuleLogger } from "../debug-log.ts";
 import {
   isWin32PathLike,
@@ -911,7 +915,9 @@ function cmdScriptCommand(command) {
 }
 
 function cmdArgsForCommand(command) {
-  return ["/d", "/s", "/c", `chcp 65001 >NUL & ${command}`];
+  // /s 会剥掉整段的首尾引号；外层引号由此处补上，两条执行路径都必须
+  // verbatim 传递本数组，任何一层再做 MSVCRT 转义都会破坏 cmd 解析。
+  return ["/d", "/s", "/c", `"chcp 65001 >NUL & ${command}"`];
 }
 
 function sandboxIsEnabled(sandbox) {
@@ -1176,6 +1182,35 @@ function cleanupRootsForSandboxGrants(grants) {
   ];
 }
 
+// A write-restricted token can only write inside the paths the sandbox
+// explicitly granted. PowerShell writes a small policy-probe script file to
+// %TEMP% while starting up to figure out whether an AppLocker-style script
+// restriction applies; when that write is denied — the user's real %TEMP% is
+// not one of the granted paths — PowerShell falls back to Constrained
+// Language Mode, which breaks most one-shot commands. withWin32SandboxRuntimeEnv
+// (above) already points TEMP/TMP at <hanakoHome>/.ephemeral/win32-sandbox-env
+// for sandboxed sessions; this makes sure that directory is one of the
+// sandbox's *required* write roots. The restricted-token startup probe needs
+// a guaranteed write grant for this directory; an optional root does not
+// provide the same contract. This lets the token write there under every code
+// path, not just the ones that happen to also touch a required root for other
+// reasons.
+function win32SandboxEnvRoot(hanakoHome) {
+  if (!hanakoHome) return null;
+  return joinRuntimePath(hanakoHome, ".ephemeral", WIN32_SANDBOX_ENV_DIR);
+}
+
+function withSandboxEnvRootAsRequiredWritePath(grants, hanakoHome) {
+  const root = win32SandboxEnvRoot(hanakoHome);
+  // No hanakoHome means withWin32SandboxRuntimeEnv never redirected TEMP in
+  // the first place; nothing to promote to a required root here.
+  if (!root) return grants;
+  mkdirSync(root, { recursive: true });
+  const existingWritePaths = grants?.writePaths || [];
+  if (existingWritePaths.some((p) => String(p).toLowerCase() === root.toLowerCase())) return grants;
+  return { ...grants, writePaths: [...existingWritePaths, root] };
+}
+
 async function spawnViaSandboxHelper({
   sandbox,
   executable,
@@ -1196,7 +1231,7 @@ async function spawnViaSandboxHelper({
     );
   }
   assertSandboxNetworkSupported(sandbox);
-  const grants = grantsForSandbox(sandbox, cwd);
+  const grants = withSandboxEnvRootAsRequiredWritePath(grantsForSandbox(sandbox, cwd), sandbox.hanakoHome);
   const nativeTimeoutMs = timeout == null || timeout <= 0
     ? 0
     : Math.min(Math.ceil(timeout * 1000), 0xFFFFFFFE);
@@ -1263,6 +1298,63 @@ async function spawnViaSandboxHelper({
   }
 }
 
+// ── 沙盒 PowerShell 启动探针 ──
+//
+// Even with TEMP redirected (see withWin32SandboxRuntimeEnv and
+// withSandboxEnvRootAsRequiredWritePath above), a PowerShell build
+// or a machine policy this codebase hasn't seen yet could still fail the same
+// way. Rather than trust that in the dark, the first sandboxed PowerShell
+// command for a given executable in this process runs a tiny scripted probe
+// through the real sandbox helper before anything user-facing does; the
+// verdict is cached so every later command for that same executable skips
+// the probe. A failed probe fails the whole PowerShell route with a clear,
+// actionable error instead of letting a command silently run in Constrained
+// Language Mode and produce confusing partial output.
+
+const SANDBOX_POWERSHELL_PROBE_TIMEOUT_SECONDS = 15;
+const SANDBOX_POWERSHELL_PROBE_ARGS = ["-NoProfile", "-NonInteractive", "-Command", "[Console]::Out.Write('ok')"];
+const SANDBOX_POWERSHELL_CLM_MARKER = "MethodInvocationNotSupportedInConstrainedLanguage";
+
+async function probeSandboxPowerShellExecutable(executable, { sandbox, cwd, env }) {
+  let stdout = "";
+  try {
+    const result = await spawnViaSandboxHelper({
+      sandbox,
+      executable,
+      args: SANDBOX_POWERSHELL_PROBE_ARGS,
+      cwd,
+      env,
+      onData: (chunk) => { stdout += String(chunk ?? ""); },
+      signal: undefined,
+      timeout: SANDBOX_POWERSHELL_PROBE_TIMEOUT_SECONDS,
+      desktopMode: "private",
+    });
+    if (stdout.includes(SANDBOX_POWERSHELL_CLM_MARKER)) return "unsupported";
+    return result?.exitCode === 0 && stdout.includes("ok") ? "ok" : "unsupported";
+  } catch {
+    return "unsupported";
+  }
+}
+
+async function ensureSandboxPowerShellExecutableProbed(executable, probeCtx) {
+  const cached = getSandboxPowerShellProbeResult(executable);
+  if (cached === "ok") return true;
+  if (cached === "unsupported") return false;
+  const result = await probeSandboxPowerShellExecutable(executable, probeCtx);
+  setSandboxPowerShellProbeResult(executable, result);
+  return result === "ok";
+}
+
+function throwSandboxPowerShellUnsupported() {
+  const error: any = new Error(
+    "[win32-sandbox] PowerShell failed its restricted-token startup probe and cannot run inside the sandbox. "
+    + "Rerun it with sandbox_permissions=\"require_escalated\" and a one-sentence justification; "
+    + "the user reviews it before it runs unsandboxed.",
+  );
+  error.code = "HANA_WIN32_SANDBOX_POWERSHELL_UNSUPPORTED";
+  throw error;
+}
+
 // ── 导出 ──
 
 /**
@@ -1303,6 +1395,7 @@ export function createWin32Exec({ sandbox = null } = {}) {
             onData: diagnosticOnData,
             signal,
             timeout,
+            verbatimLastArg: true,
           }),
         });
       }
@@ -1323,6 +1416,7 @@ export function createWin32Exec({ sandbox = null } = {}) {
           onData: diagnosticOnData,
           signal,
           timeout,
+          windowsVerbatimArguments: true,
         }),
       });
     }
@@ -1352,6 +1446,7 @@ export function createWin32Exec({ sandbox = null } = {}) {
             onData: diagnosticOnData,
             signal,
             timeout,
+            verbatimLastArg: true,
           }),
         });
       }
@@ -1372,27 +1467,67 @@ export function createWin32Exec({ sandbox = null } = {}) {
           onData: diagnosticOnData,
           signal,
           timeout,
+          windowsVerbatimArguments: true,
         }),
       });
     }
 
     if (route.runner === "powershell" || route.runner === "powershell-file" || route.runner === "powershell-command") {
-      if (sandboxIsEnabled(sandbox)) {
-        const error: any = new Error(
-          "[win32-sandbox] PowerShell cannot run reliably inside the Windows restricted-token sandbox. "
-          + "Use a cmd.exe-compatible command, or retry explicit PowerShell with "
-          + "sandbox_permissions=\"require_escalated\".",
-        );
-        error.code = "HANA_WIN32_SANDBOX_POWERSHELL_UNSUPPORTED";
-        error.runner = route.runner;
-        throw error;
-      }
-      const powerShellOptions = { sandboxed: false };
+      const sandboxed = sandboxIsEnabled(sandbox);
+      const powerShellOptions = { sandboxed };
       const powerShellInfo = route.runner === "powershell"
         ? parsePowerShellCommand(command, shellEnv, powerShellOptions)
         : route.runner === "powershell-file"
           ? parsePowerShellFileCommand(command, shellEnv, powerShellOptions)
           : parseDefaultPowerShellCommand(command, shellEnv, powerShellOptions);
+
+      if (sandboxed) {
+        const probeCtx = { sandbox, cwd, env: shellEnv };
+        if (route.runner === "powershell") {
+          // The model explicitly named this shell (pwsh vs. powershell.exe); probe
+          // exactly that executable and fail rather than silently swap runtimes.
+          if (!(await ensureSandboxPowerShellExecutableProbed(powerShellInfo.executable, probeCtx))) {
+            throwSandboxPowerShellUnsupported();
+          }
+        } else {
+          // Default routing: prefer pwsh, same as the unsandboxed default, but
+          // only trust whichever executable actually passes the sandboxed
+          // startup probe. If neither does, fail the whole route rather than
+          // quietly falling back to cmd.
+          if (!(await ensureSandboxPowerShellExecutableProbed(powerShellInfo.executable, probeCtx))) {
+            const legacy = resolvePowerShellExecutable("powershell.exe", shellEnv);
+            const legacyIsDifferent = legacy.toLowerCase() !== powerShellInfo.executable.toLowerCase();
+            if (!legacyIsDifferent || !(await ensureSandboxPowerShellExecutableProbed(legacy, probeCtx))) {
+              throwSandboxPowerShellUnsupported();
+            }
+            powerShellInfo.executable = legacy;
+          }
+        }
+
+        const helperPath = sandbox.helperPath || resolveWin32SandboxHelper({ env: shellEnv });
+        return runWithWin32Diagnostics({
+          route,
+          mode: "sandbox-helper",
+          executable: powerShellInfo.executable,
+          args: powerShellInfo.args,
+          cwd,
+          env: shellEnv,
+          onData,
+          helperPath,
+          sandbox,
+          run: (diagnosticOnData) => spawnViaSandboxHelper({
+            sandbox,
+            executable: powerShellInfo.executable,
+            args: powerShellInfo.args,
+            cwd,
+            env: shellEnv,
+            onData: diagnosticOnData,
+            signal,
+            timeout,
+            desktopMode: "private",
+          }),
+        });
+      }
 
       return runWithWin32Diagnostics({
         route,
