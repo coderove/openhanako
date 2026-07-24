@@ -131,7 +131,8 @@ import {
 const log = createModuleLogger("session");
 const SESSION_META_PAYLOAD_DIR = "session-meta-payloads";
 const SESSION_META_PAYLOAD_FIELDS = ["promptSnapshot", "memoryReflectionSnapshot"];
-const SESSION_META_PAYLOAD_INLINE_LIMIT_BYTES = 256 * 1024;
+// payload 字段一律外置为 sidecar 文件，索引文件只承载小标量，防止快照全文把共享索引撑大
+const SESSION_META_PAYLOAD_INLINE_LIMIT_BYTES = 0;
 const SESSION_META_INDEX_MAX_BYTES = 1024 * 1024;
 const REMINDER_HEADER_RE = /^\[hana_reminder at \d{4}-\d{2}-\d{2} \d{2}:\d{2}\]$/;
 const SESSION_MODEL_UNAVAILABLE_API = "hana-unavailable-model";
@@ -979,6 +980,7 @@ export class SessionCoordinator {
   declare _sessionManifestStore: any;
   declare _envChangeLedger: any;
   declare _ensureSessionLoadedInFlight: Map<string, Promise<any>>;
+  declare _metaQuarantines: Map<string, { metaPath: string; backupPath: string; quarantinedAt: string }>;
 
   /**
    * @param {object} deps
@@ -1026,6 +1028,12 @@ export class SessionCoordinator {
     this._sessionManifestStore = deps.sessionManifestStore || null;
     this._envChangeLedger = deps.envChangeLedger || null;
     this._ensureSessionLoadedInFlight = new Map();
+    // 运行期 session-meta 隔离记录：key 是 metaPath，value 是隔离详情。
+    // 只记内存态（不落盘）——重启后 quarantine 文件仍在磁盘上，但这份
+    // "刚刚发生过隔离"的提示只需要覆盖当前进程生命周期；重启后的存量隔离
+    // 文件由 listSkippedMetaSources（账本）与 _sessionManifestStoreRecovery
+    // 两条独立信号覆盖，不需要这里补历史。
+    this._metaQuarantines = new Map();
   }
 
   static _TITLES_TTL = 60_000; // 60 秒
@@ -7084,12 +7092,23 @@ export class SessionCoordinator {
       );
       await fsp.rename(metaPath, backupPath);
       this.invalidateMetaCache(metaPath);
+      this._metaQuarantines.set(metaPath, {
+        metaPath,
+        backupPath,
+        quarantinedAt: new Date().toISOString(),
+      });
       log.warn(`oversized session-meta quarantined: ${backupPath}`);
     } catch (err) {
       if (err?.code !== "ENOENT") {
         log.warn(`oversized session-meta quarantine failed: ${err.message}`);
       }
     }
+  }
+
+  // 供 engine.getSessionMetadataRecoveryStatus() 聚合消费：本进程生命周期内
+  // 运行期发生过的 session-meta 隔离全集。数组顺序无意义，调用方按需处理。
+  listMetaQuarantines() {
+    return Array.from(this._metaQuarantines.values());
   }
 
   async _compactOversizedSessionMeta(metaPath: any) {
