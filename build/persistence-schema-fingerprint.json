@@ -3118,7 +3118,7 @@
   ],
   "review": {
     "classification": "compatible",
-    "compatibilityReason": "The legacy session-meta ledger reader now strips a UTF-8 BOM before JSON.parse and revalidates cached parse_error verdicts lacking the current verdict schema, so previously misjudged BOM files are re-read once; stored shapes and paths are unchanged and older ledgers remain readable",
+    "compatibilityReason": "Instant simple compaction is now a separate boolean experiment and one-shot request; the briefly persisted lossy mode reads compatibly as Auto plus an enabled entry, with no schema, path, or identity-key change.",
     "payloadFingerprint": "sha256:ae1d8edbac64c96d7fc0d74cf1e5e4f05d579211a907b5d5b1d57247208dcb29"
   },
   "schemas": [
